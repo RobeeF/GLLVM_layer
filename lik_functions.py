@@ -7,7 +7,9 @@ Created on Tue Feb 11 19:33:27 2020
 
 import numpy as np
 from scipy.special import binom
-
+import warnings
+warnings.filterwarnings('default')
+ 
 def binom_lik(alpha, y, zM, k, ps_y, p_z_ys, nj): 
     M = zM.shape[0]
     numobs = len(y)
@@ -36,7 +38,7 @@ def binom_lik_opt(alpha, y, zM, k, ps_y, p_z_ys, nj): # Passer plus de chose en 
     yg = np.repeat(y[np.newaxis], axis = 0, repeats = M)
     coeff_binom = binom(nj, yg).reshape(M, 1, numobs)
     
-    eta = np.transpose(zM, (0, 2, 1)) @ alpha[1:].reshape(r, 1, 1)
+    eta = np.transpose(zM, (0, 2, 1)) @ alpha[1:].reshape(1, r, 1)
     eta = eta + alpha[0].reshape(1, 1, 1)# Add the constant
     
     den = nj * np.log(1 + np.exp(eta))
@@ -91,16 +93,16 @@ def categ_lik_opt(theta, y_oh, zM, k, o1, ps_y, p_z_ys):
     alphao = theta[o1 - 1:(len(theta) + 1)]
  
     broad_thro = thro.reshape(o1 - 1, 1, 1, 1)
-    eta = broad_thro - np.transpose(zM, (0, 2, 1)) @ alphao.reshape(r, 1, 1, 1)
-
-    gamma = np.exp(eta) / (1 + np.exp(eta))
-    gamma_prev = np.concatenate([np.zeros((1,M, k, r)), gamma])
-    gamma_next = np.concatenate([gamma, np.ones((1,M, k, r))])
+    eta = broad_thro - (np.transpose(zM, (0, 2, 1)) @ alphao.reshape(1, r, 1))[np.newaxis]
+    
+    gamma = 1 / (1 + np.exp(-eta))
+    gamma_prev = np.concatenate([np.zeros((1,M, k, 1)), gamma])
+    gamma_next = np.concatenate([gamma, np.ones((1,M, k, 1))])
     pi = gamma_next - gamma_prev
     
     yg = np.expand_dims(y_oh.T, 1)[..., np.newaxis, np.newaxis] 
-
-    log_p_y_z = yg * np.log(np.expand_dims(pi, axis=2)) # Put the newaxis elsewhere
+    
+    log_p_y_z = yg * np.log(np.expand_dims(pi, axis=2)) 
     
     return -np.sum(ps_y * np.sum(np.expand_dims(p_z_ys[np.newaxis], axis = 4) * log_p_y_z, (0,1,4)))
 

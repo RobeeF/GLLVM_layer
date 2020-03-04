@@ -167,6 +167,31 @@ for i in range(nb_trials):
     
 np.mean(times)/np.mean(times_opt) # Optimized is more than 4 times faster !! 
 
+from scipy.optimize import Bounds 
+from scipy.optimize import LinearConstraint
+
+b = [-np.inf, *theta[:o-1], np.inf]
+bounds = Bounds(lb = b[:(o - 1)], ub = b[1:]) # Bounds have to evolve hence there are linear constraints
+
+minimize(categ_lik_opt, theta, args = (y_oh, zM, k, o1, ps_y, p_z_ys), 
+                   tol = 0.1, jac = categ_gr_lik, bounds = bounds)
+
+# Create constraint matrices (very dirty)
+nb_cst_params = thr.shape[1] - 1
+np_params = theta.shape[0]
+lcs = np.full(nb_cst_params - 1, -1)
+lcs = np.diag(lcs, 1)
+np.fill_diagonal(lcs, 1)
+lcs = np.hstack([lcs[:nb_cst_params - 1,:], np.zeros([np_params - nb_cst_params, np_params - nb_cst_params])])
+
+linear_constraint = LinearConstraint(lcs, np.full(nb_cst_params - 1, -np.inf), \
+                                     np.full(nb_cst_params - 1, 0), keep_feasible = True)
+
+opt = minimize(categ_lik_opt, theta, args = (y_oh, zM, k, o1, ps_y, p_z_ys), 
+                   tol = 0.1, method='trust-constr',  jac = categ_gr_lik, \
+                   constraints = linear_constraint, hess = '2-point')
 
 
-    
+dir(linear_constraint)
+linear_constraint.A @ theta[np.newaxis].T
+lcs @ theta[np.newaxis].T
