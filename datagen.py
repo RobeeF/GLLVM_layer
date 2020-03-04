@@ -186,7 +186,9 @@ def gen_mvdata(z, init, seed = None):
 
 #y = np.genfromtxt('../asta_Rcode_compMCGH/y.csv', delimiter = ',', skip_header = True)[:,1:]
 
-numobs = 500
+# Univariate data
+
+numobs = 1000
 M = 300
 
 z, labels = gen_z(numobs, seed)
@@ -226,10 +228,27 @@ init['alphaor'] = alphaor
 init['thr'] = thr
 init['w'] = w
 
-out = gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, 50, o, szo, init, eps, lik, maxstep, 
+## Random init
+init = init_params(r, p, p1, p2, o, szo, k, 1)
+ 
+# Launching the alg
+out = gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, 50, o, szo, init, eps, maxstep, 
                              var_distrib, nj, M, None)
 
-out['alpha']
+out['sigma']
+misc(labels, out['classes'])
+plt.scatter(labels, out['classes'])
+
+
+true = labels
+pred = out['classes']
+correct_classes = out['classes'] + 5
+correct_classes = np.where(correct_classes == 5, 2, correct_classes)
+correct_classes = np.where(correct_classes == 7, 0, correct_classes)
+correct_classes = np.where(correct_classes == 6, 1, correct_classes)
+
+
+print(np.vstack([labels, out['classes']]).T[:200])
 
 # For r > 1:
 r = 3

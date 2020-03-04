@@ -208,9 +208,9 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
                 opt = minimize(binom_lik_opt, alpha[j,:], args = (y[:,j], zM, k, ps_y, p_z_ys, nj[j]), 
                    tol = tol, method='BFGS', jac = binom_gr_lik_opt)
                 
-                print('Binomial')
-                print(opt.success)
-                print(opt.x)
+                #print('Binomial')
+                #print(opt.success)
+                #print(opt.x)
                 if not(opt.success):
                     print('Binomial optimization failed')
                     
@@ -241,9 +241,9 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
                                    tol = tol, method='trust-constr',  jac = categ_gr_lik, \
                                    constraints = linear_constraint, hess = '2-point')
                 
-                print('Ordinal')
-                print(opt.status)
-                print(opt.x)
+                #print('Ordinal')
+                #print(opt.status)
+                #print(opt.x)
                 if opt.status != 2:
                     print('Categorical optimization failed')
                 theta = deepcopy(opt.x) 
