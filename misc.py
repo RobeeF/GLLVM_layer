@@ -10,25 +10,29 @@ from copy import deepcopy
 from itertools import permutations
 
 def misc(true, pred):
+    ''' Compute a label invariant misclassification error '''
     best_misc = 0
-    true_classes = np.unique(true)
+    true_classes = np.unique(true).astype(int)
     nb_classes = len(true_classes)
     best_misc = 1
-
-    for i in range(nb_classes):
-        relabeled_pred = (pred + i) % nb_classes
-        current_misc = np.mean(true != relabeled_pred)
+    
+    # Compute of the possible labels
+    all_possible_labels = [list(l) for l in list(permutations(true_classes))]
+    
+    # And compute the misc for each label
+    for l in all_possible_labels:
+        shift = max(true_classes) + 1
+        shift_pred = pred + max(true_classes) + 1
+        
+        for i in range(nb_classes):
+            shift_pred = np.where(shift_pred == i + shift, l[i], shift_pred)
+        
+        current_misc = np.mean(true != shift_pred)
         if current_misc < best_misc:
             best_misc = deepcopy(current_misc)
     return best_misc
 
-i = 0
-correct_classes - relabeled_pred
 
-def new_misc(true, pred):
-    best_misc = 0
-    true_classes = np.unique(true)
-    nb_classes = len(true_classes)
-    best_misc = 1
+
+
     
-    all_possible_labels = list(permutations(true))

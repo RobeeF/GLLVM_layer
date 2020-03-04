@@ -188,8 +188,8 @@ def gen_mvdata(z, init, seed = None):
 
 # Univariate data
 
-numobs = 1000
-M = 300
+numobs = 2000
+M = 100
 
 z, labels = gen_z(numobs, seed)
 y = gen_data(z, 1)
@@ -235,17 +235,19 @@ init = init_params(r, p, p1, p2, o, szo, k, 1)
 out = gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, 50, o, szo, init, eps, maxstep, 
                              var_distrib, nj, M, None)
 
-out['sigma']
+out['w']
 misc(labels, out['classes'])
+new_misc(labels, out['classes'])
 plt.scatter(labels, out['classes'])
 
 
 true = labels
 pred = out['classes']
 correct_classes = out['classes'] + 5
-correct_classes = np.where(correct_classes == 5, 2, correct_classes)
-correct_classes = np.where(correct_classes == 7, 0, correct_classes)
-correct_classes = np.where(correct_classes == 6, 1, correct_classes)
+correct_classes = np.where(correct_classes == 5, 1, correct_classes)
+correct_classes = np.where(correct_classes == 6, 0, correct_classes)
+correct_classes = np.where(correct_classes == 7, 2, correct_classes)
+misc(labels, correct_classes)
 
 
 print(np.vstack([labels, out['classes']]).T[:200])
