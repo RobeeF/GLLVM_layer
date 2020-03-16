@@ -7,7 +7,6 @@ Created on Fri Mar  6 08:52:28 2020
 
 import autograd.numpy as np
 
-from autograd import grad
 from autograd.numpy import newaxis as n_axis
 from autograd.numpy import expand_dims as exp_dim
 from autograd.numpy.random import multivariate_normal
@@ -24,7 +23,7 @@ from scipy.stats import multivariate_normal as mvnorm
 #from numpy.linalg import cholesky, pinv
  
 from lik_functions import compute_py_zM_bin, compute_py_zM_ord
-from lik_gradients import binom_gr_lik_opt, ord_gr_lik, ord_autograd
+from lik_gradients import ord_autograd, bin_autograd
 
 from copy import deepcopy
 from scipy.optimize import minimize
@@ -186,20 +185,19 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         for j in range(nb_bin):
             # Add initial guess and lim iterations
             opt = minimize(binom_lik_opt, lambda_bin[j,:], args = (y_bin[:,j], zM, k, ps_y_new, p_z_ys_new, nj_bin[j]), 
-                           tol = tol, method='BFGS', jac = binom_gr_lik_opt)
+                           tol = tol, method='BFGS', jac = bin_autograd, options = {'maxiter': maxstep})
                 
             if not(opt.success):
-                    print('Binomial optimization failed')
+                raise RuntimeError('Binomial optimization failed')
                     
             lambda_bin[j, :] = deepcopy(opt.x)  
 
-        col_nb = 0        
         for j in range(nb_ord):
             enc = OneHotEncoder(categories='auto')
             y_oh = enc.fit_transform(y_ord[:,j][..., n_axis]).toarray()                
             
-            nb_constraints = nj_ord[col_nb] - 2
-            np_params = lambda_ord[col_nb].shape[0]
+            nb_constraints = nj_ord[j] - 2
+            np_params = lambda_ord[j].shape[0]
             lcs = np.full(nb_constraints, -1)
             lcs = np.diag(lcs, 1)
             np.fill_diagonal(lcs, 1)
@@ -211,16 +209,16 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
             
             warnings.filterwarnings("default")
         
-            opt = minimize(ord_lik_opt, lambda_ord[col_nb] , args = (y_oh, zM, k, nj_ord[col_nb], ps_y_new, p_z_ys_new), 
+            opt = minimize(ord_lik_opt, lambda_ord[j] , args = (y_oh, zM, k, nj_ord[j], ps_y_new, p_z_ys_new), 
                                tol = tol, method='trust-constr',  jac = ord_autograd, \
-                               constraints = linear_constraint, hess = '2-point')
+                               constraints = linear_constraint, hess = '2-point', options = {'maxiter': maxstep})
             
-            if opt.status != 2:
-                print('Categorical optimization failed')
-            lambda_ord[col_nb] = deepcopy(opt.x) 
+            if not(opt.success):
+                raise RuntimeError('Categorical optimization failed')
+                print(opt)
+            lambda_ord[j] = deepcopy(opt.x) 
             
-            col_nb += 1
-            
+                        
         # Last identifiability part
         lambda_bin = np.tril(lambda_bin, k = 1)
         lambda_bin[:,1:] = lambda_bin[:,1:] @ sigma_z.T

@@ -9,7 +9,7 @@ import autograd.numpy as np
 from autograd import grad
 #import numpy as np
 
-from lik_functions import ord_lik_opt
+from lik_functions import ord_lik_opt, binom_lik_opt
 
 def binom_gr_lik_opt(alpha, y, zM, k, ps_y, p_z_ys, nj):    
     r = zM.shape[1]
@@ -51,7 +51,12 @@ def binom_gr_lik_block(lambda_bin, y_bin, zM, k, ps_y, p_z_ys, nj_bin):
                     np.sum(np.expand_dims(p_z_ys[..., np.newaxis], 2) *  So, axis = 0),\
                     axis = (0,2)).flatten() 
     
-                
+     
+def bin_autograd(lambda_bin_j, y_bin_j, zM, k, ps_y_new, p_z_ys_new, nj_bin_j):
+    grad_bin_lik = grad(binom_lik_opt)
+    return grad_bin_lik(lambda_bin_j, y_bin_j, zM, k, ps_y_new, p_z_ys_new, nj_bin_j)
+
+           
 def binom_hess(alpha, y, zM, k, ps_y, p_z_ys, nj):
     r = zM.shape[1]
     

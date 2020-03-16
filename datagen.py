@@ -11,7 +11,7 @@ from numpy.random import multivariate_normal, uniform, binomial
 import matplotlib.pyplot as plt
 import os
 
-os.chdir('C:/Users/Utilisateur/Documents/GitHub/GLLVM_layer_clean')
+os.chdir('C:/Users/Utilisateur/Documents/GitHub/GLLVM_layer')
 from init_params import init_params, init_cv
 from misc import misc
 from gllvm_block import gllvm
@@ -252,7 +252,7 @@ print(np.vstack([labels, out['classes']]).T[:200])
 r = 2
 p1 = 3
 numobs = 1500
-M = 600
+M = 900
 k = 3
 
 seed = 1
@@ -270,7 +270,7 @@ var_distrib = np.array(["bernoulli","bernoulli","binomial","ordinal"])
 #y_ord = np.repeat(y_ord, 2, 1) 
 
 eps = 1E-05
-it = 1
+it = 30
 maxstep = 10
 
 z, labels = gen_mv_z(numobs, r, init, seed)
@@ -279,8 +279,7 @@ y = gen_mvdata(z, init, seed = None)
 
 random_init = init_params(r, nj_bin, nj_ord, k, init_seed)
 
-out = gllvm(y, numobs, r, k, p, p1, p2, it, o, szo, random_init, eps, maxstep, 
-                             var_distrib, nj, M, None)
+out = gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed)
 
 misc(labels, out['classes'])
 
