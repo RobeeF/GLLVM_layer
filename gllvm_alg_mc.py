@@ -12,10 +12,12 @@ from scipy.special import binom
 from scipy.stats import norm, multivariate_normal as mvnorm
 from copy import deepcopy
 from scipy.optimize import minimize
-from lik_functions import binom_lik_opt, categ_lik_opt
+from lik_functions import binom_lik_opt, ord_lik_opt
 from lik_gradients import binom_gr_lik_opt, categ_gr_lik
 from sklearn.preprocessing import OneHotEncoder
 from scipy.optimize import LinearConstraint
+from resample_zM import sample_MC_points
+from matplotlib import pyplot as plt
 
 import warnings
 warnings.filterwarnings("error")
@@ -46,13 +48,15 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
     E_z_sy = np.zeros(shape =(numobs, k, r))
     E_zz_sy = np.zeros(shape =(numobs, k, r, r))
       
-    zM = np.zeros(shape =(M, r, k))
-    
-    p_z_ys = np.zeros(shape =(M, numobs, k))
-            
+    M2 = 10**r
+    #zM = np.zeros(shape =(M, r, k))    
+    #p_z_ys = np.zeros(shape =(M, numobs, k)) 
+     
     while ((hh < it) & (ratio > eps)):
         hh = hh + 1
         warnings.filterwarnings("error")
+        zM = np.zeros(shape =(M, r, k))    
+        p_z_ys = np.zeros(shape =(M, numobs, k))
 
         # Generate the gaussians at the beginining
         # Initiate the points zM from the prior f(z_1 | s_i  = 1, Theta)
@@ -62,24 +66,25 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
         else:
             for i in range(k): # To change with np.block_diag when ready
                 zM[:,:,i] = multivariate_normal(size = M, mean = mu[i,:].flatten(), cov = sigma[i], check_valid = 'raise') 
-    
-        for i in range(k):
-            py_zM = np.zeros(shape =(M, numobs))
-            co = -1 # Delete this ugly co later on
 
+        py_zM_tot =  np.zeros(shape = (M, numobs, k)) 
+        for i in range(k):
+            py_zM = np.zeros(shape = (M, numobs)) # Checker la place dans le code R
+            co = -1 # Delete this ugly co later on
+            
             for j in range(p):
                 
                 if (var_distrib[j] == "binomial" or var_distrib[j] == "bernoulli"):
                     zi_star = np.hstack((np.ones((zM[:,:,i].shape[0], 1)), zM[:,:,i]))
                     eta = np.repeat(zi_star @ alpha[j,:][...,np.newaxis], axis = 1, repeats = numobs) 
-                    #pi_greco = np.exp(eta)/(1 + np.exp(eta))
                     pi_greco = 1/(1 + np.exp(-eta))
-
+                    
                     yg = np.repeat(y[:, j][np.newaxis], axis = 0, repeats = M)  
                     
                     try:
                         np.log(binom(nj[j], yg)) + np.log(np.power(pi_greco,yg)) +\
                                     np.log(np.power(1 - pi_greco, nj[j] - yg))
+
                     except RuntimeWarning:
                         print(alpha[j,:])
                         print(zi_star.mean())
@@ -128,6 +133,7 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
                         
                         gamma_prev_s = deepcopy(gamma_s)
                 
+            py_zM_tot[:,:,i] = py_zM
             py_zM = np.exp(py_zM)
             py_zM[py_zM == 0] = 1e-50
             qM = py_zM / np.sum(py_zM, axis = 0, keepdims = True)
@@ -154,7 +160,7 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
             # Compute (17): p(y | s= 1)_  Keep the prod accross dimensions ?
             py_s[:, i] = np.sum(np.repeat(pz_s_norm,\
                 axis = 1, repeats = numobs) * py_zM, axis = 0) 
-        
+                              
             # Compute (16) p(z |y, s) 
             p_z_ys[:, :, i] = (np.repeat(np.prod(pz_s, axis = 1, keepdims = True),\
                 axis = 1, repeats = numobs) * py_zM) / py_s[:,i]
@@ -166,7 +172,8 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
  
             zTz = new_zM[...,np.newaxis] @ np.transpose(new_zM[...,np.newaxis], (0, 1 , 3, 2))
             E_zz_sy[:,i,:,:] = np.atleast_3d(np.mean(zTz, axis = 0))
-                             
+              
+               
         # Normalize ps_y in order to obtain (18)
         ps_y = ps_y / np.sum(ps_y, axis = 1, keepdims = True)        
         p_y = py_s @ w
@@ -176,9 +183,35 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
             Ez_y = Ez_y + ps_y[:, i][...,np.newaxis] * E_z_sy[:, i, :]
                 
         # Normalizing p(z|y,s)
-        for i in range(k): # Check axis for summation...
-            p_z_ys[:,:,i] = p_z_ys[:,:,i] / np.sum(p_z_ys[:,:,i], axis = 0, keepdims = True)  
-                
+        p_z_ys = p_z_ys / np.sum(p_z_ys, axis = 0, keepdims = True)
+
+        ####### New
+        pz_s = np.zeros((M, 1, k))
+        if r == 1:
+            for i in range(k):
+                pz_s[:,:, i] = norm.pdf(zM[:,:,i], loc = mu[i], scale = cholesky(sigma[i]))
+        else:
+            for i in range(k):
+                pz_s[:,:, i] = mvnorm.pdf(zM[:,:,i], mean = mu[i], cov = sigma[i])[...,np.newaxis]
+        
+        true_lik = binom_lik_opt(alpha[0,:], y[:,0], zM, k, ps_y, p_z_ys, nj[0])
+        print('Before', true_lik)
+        
+        error = []
+        for i in range(1, 20):
+            M2 = 20 * i 
+            p_z_ys2, zM2 =  sample_MC_points(zM, p_z_ys, M2) 
+            p_z_ys2 = p_z_ys2 / np.sum(p_z_ys2, axis = 0, keepdims = True)
+            
+            approx_lik = binom_lik_opt(alpha[0,:], y[:,0], zM2, k, ps_y, p_z_ys2, nj[0])
+            #print('After', approx_lik)
+            error.append(np.abs(true_lik - approx_lik)/true_lik)
+         
+        print(approx_lik)
+        plt.plot(np.array(range(1,20)) * 20, error)
+        plt.show()
+        M2 = 50
+        ##########
         # Begining of the M-step 
         w = np.mean(ps_y, axis = 0)
         
@@ -187,6 +220,7 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
         temp2 = np.zeros((r, r))
         temp3 = np.zeros(r)
         
+        i = 1
         for i in range(k):
             den = sum(ps_y[:, i]) 
             den = den if den > 0 else 1e-14
@@ -222,7 +256,7 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
                 o1 = nj[j]
                 
                 enc = OneHotEncoder(categories='auto')
-                y_oh = enc.fit_transform(y[:,j][..., np.newaxis]).toarray()
+                y_oh = enc.fit_transform(y[:,j][..., np.newaxis]).toarray()                
                 
                 nb_constraints = thr.shape[1] - 2
                 np_params = theta.shape[0]
@@ -237,7 +271,7 @@ def gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, it, o, szo, init, eps, maxste
                 
                 warnings.filterwarnings("default")
 
-                opt = minimize(categ_lik_opt, theta, args = (y_oh, zM, k, o1, ps_y, p_z_ys), 
+                opt = minimize(ord_lik_opt, theta, args = (y_oh, zM, k, o1, ps_y, p_z_ys), 
                                    tol = tol, method='trust-constr',  jac = categ_gr_lik, \
                                    constraints = linear_constraint, hess = '2-point')
                 

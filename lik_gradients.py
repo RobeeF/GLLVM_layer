@@ -24,6 +24,28 @@ def binom_gr_lik_opt(alpha, y, zM, k, ps_y, p_z_ys, nj):
     return - np.sum(ps_y[..., np.newaxis] * \
                     np.sum(p_z_ys[...,np.newaxis] *  So, axis = 0),\
                     axis = (0,1))
+ 
+def binom_gr_lik_block(lambda_bin, y_bin, zM, k, ps_y, p_z_ys, nj_bin):    
+    # Deflatten lambda_bin
+    r = zM.shape[1]
+    nb_bin = y_bin.shape[1]
+    lambda_bin = lambda_bin.reshape(nb_bin, r + 1)
+            
+    eta = lambda_bin[:,1:][np.newaxis] @ zM # shape = (M, nb_bin, k)
+    eta = eta + lambda_bin[:,0][np.newaxis, ..., np.newaxis] # Add the constant
+    
+    pi = 1/(1 + np.exp(-eta))    
+    theta_prime = np.repeat(nj_bin[np.newaxis, ..., np.newaxis, np.newaxis], r + 1, axis = -1) *\
+                        pi[..., np.newaxis] # to check when r > 1. 
+
+    # Computing So, shape = (M, nb_bin, k, r + 1)
+    tzM_aug = np.expand_dims(np.expand_dims(np.transpose(zM, (0, 2, 1)), 1), 2)    
+    So = y_bin[np.newaxis, ..., np.newaxis, np.newaxis] - np.expand_dims(theta_prime, 1) 
+    So[:,:,:,:,1:] = So[:,:,:,:,1:] * tzM_aug
+    
+    return - np.sum(np.expand_dims(ps_y[..., np.newaxis], 1) * \
+                    np.sum(np.expand_dims(p_z_ys[..., np.newaxis], 2) *  So, axis = 0),\
+                    axis = (0,2)).flatten() 
     
                 
 def binom_hess(alpha, y, zM, k, ps_y, p_z_ys, nj):
@@ -48,9 +70,10 @@ def binom_hess(alpha, y, zM, k, ps_y, p_z_ys, nj):
 # Categorical gradient
 ###########################################################################
 
-def categ_gr_lik(theta, y_oh, zM, k, o1, ps_y, p_z_ys):
+def ord_gr_lik(theta, y_oh, zM, k, o1, ps_y, p_z_ys):
     ''' Compute the likelihood gradients of the categorical data
     '''
+    
     r = zM.shape[1]
     M = zM.shape[0]
     numobs = len(y_oh)
@@ -98,21 +121,67 @@ def categ_gr_lik(theta, y_oh, zM, k, o1, ps_y, p_z_ys):
             np.sum(np.expand_dims(p_z_ys[np.newaxis], axis = 4) * der_log_pyz_alphao, 1), axis = (0, 1, 2))                    
         
     return np.concatenate([thr_grad.flatten(), alphao_grad.flatten()]) 
-    
-    #A la mano 
+
+
+def ord_gr_lik_block(lambda_ord, y_oh, zM, k, ps_y, p_z_ys, nj_ord):
+    ''' Compute the likelihood gradients of the categorical data
     '''
-    g = 2
-    (1 - gamma[g]) * gamma[g+1] / (gamma[g+1] - gamma[g]) # Ok pour 1
     
-    - (1 - gamma[g]) * gamma[g] / (gamma[g] - gamma[g - 1]) # Ok pour 2
-    der_prev_theta_thr[g - 1]
+    r = zM.shape[1]
+    M = zM.shape[0]
+    numobs = y_oh.shape[1]
     
-    # Compute of the 4 gradients by hand
-    gammag = np.expand_dims(gamma, axis = 2)
-    derf_t2 = - yg[0] * ((1 - gammag[1]) * gammag[1]) / (gammag[1] - gammag[0]) \
-    + y_oh[1] * ((1 - gammag[1]) * gammag[0]) / (gammag[1] - gammag[0]) \
-    + y_oh[1] * ((1 - gammag[1]) * gammag[2]) / (gammag[2] - gammag[1]) \
-    - y_oh[2] * ((1 - gammag[1]) * gammag[1]) / (gammag[2] - gammag[1])
+    max_nj_ord = max(nj_ord)
+    nb_ord = len(nj_ord)
+    
+     # Deflatten lambda_ord
+    lambda_ord = lambda_ord.reshape(nb_ord, max_nj_ord + r - 1)
+    
+    lambda0 = lambda_ord[:, :(max_nj_ord - 1)]
+    Lambda = lambda_ord[:,(max_nj_ord - 1) :(max_nj_ord + r)]
+         
+    broad_thro = lambda0.reshape(nb_ord, max_nj_ord - 1, 1)[np.newaxis] 
+    eta = broad_thro - np.expand_dims(Lambda[np.newaxis] @ zM, 2) 
+    
+    # gamma shape (M, nb_ord, max_nj_ord - 1, k)
+    gamma = 1 / (1 + np.exp(-eta))
+    gamma_prev = np.concatenate([np.zeros((M, nb_ord, 1, k)), gamma], 2)
+    gamma_next = np.concatenate([gamma, np.ones((M, nb_ord, 1, k))], 2)
+    
+    zT = np.transpose(zM[np.newaxis], (1, 2, 0, 3))
+    
+    # Taken from Moustaki. 
+    der_theta_lambda0 = ((1 - gamma) * gamma_next[:, :, 1:]) / (gamma_next[:, :, 1:] - gamma) # Ok
+    der_prev_theta_lambda0 = - (1 - gamma[:, :, 1:]) *  gamma[:, :, 1:] / (gamma[:, :, 1:] - gamma_prev[:, :, 1:(max_nj_ord - 1)])
+    
+    der_b_lambda0 = (1 - gamma) * gamma / (gamma_next[:, :, 1:] - gamma)
+    der_prev_b_lambda0 = - (1 - gamma[:, :, 1:]) * gamma_prev[:, :, 1:(max_nj_ord - 1)] / (gamma[:, :, 1:] - gamma_prev[:, :, 1:(max_nj_ord - 1)]) 
+    
+    # Shape (M, nb_ord, r, max_nj_ord - 1, k)
+    der_theta_Lambda = - np.expand_dims(zT, 1) * np.expand_dims(gamma_next[:, :, 1:], 2)
+    der_b_Lambda = - np.expand_dims(zT, 1) * np.expand_dims(gamma, 2) 
         
-    print(derf_t2[:,:,:,1].sum())
-    '''
+    # Format the derivatives
+    der_prev_theta_lambda0 = np.concatenate([np.zeros((M, nb_ord, 1, k)), der_prev_theta_lambda0], axis = 2)
+    der_prev_b_lambda0 = np.concatenate([np.zeros((M, nb_ord, 1, k)), der_prev_b_lambda0], axis = 2)
+
+    yg = y_oh[np.newaxis, ..., np.newaxis] 
+    
+    # Compute lambda0 gradient
+    der_log_pyz_lambda0 = np.concatenate([np.zeros((1, nb_ord, numobs, 1, 1)), yg], axis = 3)[:, :, :, :(max_nj_ord - 1)] * \
+                        np.expand_dims(der_prev_theta_lambda0, axis = 2) \
+                  + yg[:, :, :, :(max_nj_ord - 1)] * np.expand_dims(- der_prev_b_lambda0 + der_theta_lambda0, axis = 2) \
+                          - yg[:, :, :, 1:] * np.expand_dims(der_b_lambda0, axis = 2)
+         
+    lambda0_grad = - np.sum(np.expand_dims(ps_y[np.newaxis], 2) * \
+            np.sum(np.expand_dims(np.expand_dims(p_z_ys, axis = 1), axis = 3) * der_log_pyz_lambda0, 0), axis = (1, 3))
+    
+    # Compute Lambda gradient
+    der_log_pyz_Lambda = np.expand_dims(yg[:, :, :, :(max_nj_ord - 1)], 2) * np.expand_dims(der_theta_Lambda, axis = 3) \
+                    - np.expand_dims(yg[:, :, :, 1:], 2) * np.expand_dims(der_b_Lambda, axis = 3)
+        
+    broad_p_z_y_s = np.expand_dims(np.expand_dims(np.expand_dims(p_z_ys, 1), 2), 4)
+    Lambda_grad = - np.sum(np.expand_dims(ps_y[np.newaxis, np.newaxis], 3) * \
+            np.sum(broad_p_z_y_s * der_log_pyz_Lambda, 0), axis = (2, 3, 4))                    
+        
+    return np.hstack([lambda0_grad, Lambda_grad]).flatten()

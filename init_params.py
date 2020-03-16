@@ -58,22 +58,17 @@ def init_params(r, p, p1, p2, o, szo, k, init_seed):
   
     return(init)
 
-
-def init_cv(out, y,  k, var_distrib, r, nj, seed = None):
+def init_cv(y,  k, var_distrib, r, nj, seed = None):
     ''' Test 20 different inits for a few iterations and returns the best one'''
     
     numobs = y.shape[0]
     p = y.shape[1]
-    p2 = sum(np.array(modello) == "ordinal")
+    p2 = sum(np.array(var_distrib) == "ordinal")
     p1 = p - p2
-    o = nj[modello == "ordinal"]
-    var_distrib = np.array(["bernoulli","bernoulli","binomial","ordinal"])
-
-    if type(o) != list: # Dirty formating
-        o = [o]
-    szo = max(o)
+    o = nj[var_distrib == "ordinal"][0] # Dirty hack to remove when several ordinal variables
+    szo = o # Dirty hack to remove when several ordinal variables
   
-    nb_init_tested = 20
+    nb_init_tested = 5
     M = 300
     best_lik = -1000000
     best_init = {}
@@ -82,10 +77,11 @@ def init_cv(out, y,  k, var_distrib, r, nj, seed = None):
     eps = 1E-5
 
     for i in range(nb_init_tested):
-        init = init_params(r, p, p1, p2, o, szo, init_seed = None)
+        init = init_params(r, p, p1, p2, o, szo, k, init_seed = None)
         out_pilot_mc = gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, nb_it, o, szo, init, eps, maxstep, 
                              var_distrib, nj, M, seed)
-        lik = out_pilot_mc['lik'][nb_it,0]
+
+        lik = out_pilot_mc['likelihood'][-1]
     
         if (best_lik < lik):
             best_lik = lik

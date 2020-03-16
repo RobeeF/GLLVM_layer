@@ -10,8 +10,8 @@ from numpy.random import multivariate_normal, uniform, binomial
 import matplotlib.pyplot as plt
 import os
 
-os.chdir('C:/Users/Utilisateur/Documents_importants/scolarité/These/Stats/binary_dgmm/asta/mvasta_Python')
-from init_params import init_params
+os.chdir('C:/Users/Utilisateur/Documents/GitHub/GLLVM_layer')
+from init_params import init_params, init_cv
 from misc import misc
 
 from gllvm_alg_mc import gllvm_alg_mc_pilot
@@ -82,104 +82,7 @@ def gen_data(z, seed = None):
     ########gen ordinal#############
     probor = np.zeros(shape = (numobs,szo,p3))
     thr = [-1.00, -0.30, 0.40,  0.90]
-  
-    alphaor = [[1.50]]
-  
-  
-    for k in range(szo): # Truc chelou avec thr
-        if (k<szo - 1):
-            pred = thr[k] - alphaor @ z[np.newaxis]
-            probor[:,k,:] = (np.exp(pred)/(1+ np.exp(pred))).T
-        else:
-            probor[:,k,:] = 1
-            
-    for l in range(numobs):                    
-        for i in range(p3):
-            x = uniform(0, 1, 1)[0]    
-            for k in range(szo):
-                if (k==0):
-                    if (x<=probor[l,k,i]): 
-                        y[l,p - 1] = k
-                else:
-                    if (probor[l,k-1,i]<x)&(x<=probor[l,k,i]):
-                        y[l,p - 1] = k 
-  
-    return(y)
-
-
-####################################################################
-# Multivariate data generation
-####################################################################
-def gen_mv_z(numobs, r, init, seed):
-    np.random.seed = seed
-
-    k  = 3
-    numobs = 1000
-
-    all_z = np.zeros((numobs,r,k))
-    for i in range(k): # To change with np.block_diag when ready
-        all_z[:,:,i] = multivariate_normal(size = numobs, mean = init['mu'][i], cov = init['sigma'][i]) 
-
-    z = np.zeros((numobs, r))
-    cases = uniform(0, 1, numobs)    
-    labels = np.zeros(numobs)
-    
-    ranges = [0] + init['w'].flatten().tolist() + [1]
-    
-    for i in range(numobs):
-        for dim in range(3):
-            if (cases[i]>np.sum(ranges[:dim + 1])) and (cases[i]<np.sum(ranges[:dim + 2])):
-                z[i] = all_z[i, : ,dim]
-                labels[i] = dim
-    return z, labels  
-
-def gen_mvdata(z, init, seed = None):
-    np.random.seed = seed
-
-    numobs = len(z)  
-    p1 = 2
-    p2 = 1
-    p3 = 1
-    p=p1+p2+p3
-    szo=5
-    y = np.zeros(shape = (numobs, p))
-    
-    ######## gen binary and count #################
-    pred = init['alpha'] @ np.vstack([np.ones((1, numobs)), z.T]) 
-    probbin = np.exp(pred) / (1 + np.exp(pred))
-    probbin = probbin.T
-    casuali1 = uniform(size = (numobs, p1))
-    x = np.zeros((numobs,p1))
-    x = (casuali1 < probbin[:,:p1]).astype(int)
-    y[:,0:p1]=x
-
-    # For count
-    for l in range(numobs):
-        y[l,p1:(p1+p2)] = binomial(n = 10, p = probbin[l,p1:(p1 + p2)], size = 1) # p1 + p2 ?
-
-    ########gen ordinal#############
-    probor = np.zeros(shape = (numobs,szo,p3))
-      
-    for k in range(szo): # Truc chelou avec thr
-        if (k<szo - 1):
-            pred = init['thr'][:,k] - init['alphaor'] @ z.T
-            probor[:,k,:] = (np.exp(pred)/(1+ np.exp(pred))).T
-        else:
-            probor[:,k,:] = 1
-            
-    for l in range(numobs):                    
-        for i in range(p3):
-            x = uniform(0, 1, 1)[0]    
-            for k in range(szo):
-                if (k==0):
-                    if (x<=probor[l,k,i]): 
-                        y[l,p - 1] = k
-                else:
-                    if (probor[l,k-1,i]<x)&(x<=probor[l,k,i]):
-                        y[l,p - 1] = k 
-  
-    return(y)
-    
+   
 ##############################################################################
 # Debugging part
 ##############################################################################
@@ -188,8 +91,8 @@ def gen_mvdata(z, init, seed = None):
 
 # Univariate data
 
-numobs = 2000
-M = 100
+numobs = 1000
+M = 300
 
 z, labels = gen_z(numobs, seed)
 y = gen_data(z, 1)
@@ -230,114 +133,39 @@ init['w'] = w
 
 ## Random init
 init = init_params(r, p, p1, p2, o, szo, k, 1)
- 
+init = init_cv(y, k, var_distrib, r, nj, seed = 1)
 # Launching the alg
-out = gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, 50, o, szo, init, eps, maxstep, 
-                             var_distrib, nj, M, None)
+#out = gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, 50, o, szo, init, eps, maxstep, 
+                             #var_distrib, nj, M, None)
 
-out['w']
+out['sigma']
 misc(labels, out['classes'])
 new_misc(labels, out['classes'])
 plt.scatter(labels, out['classes'])
 
 
-true = labels
-pred = out['classes']
-correct_classes = out['classes'] + 5
-correct_classes = np.where(correct_classes == 5, 1, correct_classes)
-correct_classes = np.where(correct_classes == 6, 0, correct_classes)
-correct_classes = np.where(correct_classes == 7, 2, correct_classes)
-misc(labels, correct_classes)
-
-
 print(np.vstack([labels, out['classes']]).T[:200])
-
-# For r > 1:
-r = 3
-
-init = init_params(r, p, p1, p2, o, szo, k, 1)
-init
-# Debug all dimensions are the same
-init['mu'][:,0] = mu[:,0]
-init['mu'][:,1] = mu[:,0]
-init['sigma'][0] = np.eye(2) * sigma[0,0]
-init['sigma'][1] = np.eye(2) * sigma[1,0]
-init['sigma'][2] = np.eye(2) * sigma[2,0]
-init['alpha'][:,0] = alpha[:,0]
-init['alpha'][:,1] = alpha[:,1]
-init['alpha'][:,2] = alpha[:,1]
-init['alphaor'][:,0] = alphaor[0]
-init['alphaor'][:,1] = alphaor[0]
-
-init['thr'] = thr
-init['w'] = w
-
-
-out = gllvm_alg_mc_pilot(y, numobs, r, k, p, p1, p2, 20, o, szo, init, eps, lik, maxstep, 
-                             var_distrib, nj, M, None)
-
-out['likelihood']
-
-# Debugging E(zz, y, s)
-zex = np.load('C:/Users/Utilisateur/Documents_importants/scolarité/These/Stats/binary_dgmm/asta/bad_asta_code/zex.npy')
-temp0 = np.load('C:/Users/Utilisateur/Documents_importants/scolarité/These/Stats/binary_dgmm/asta/bad_asta_code/temp0.npy')
-temp1 = np.load('C:/Users/Utilisateur/Documents_importants/scolarité/These/Stats/binary_dgmm/asta/bad_asta_code/temp1.npy')
-temp2 = np.load('C:/Users/Utilisateur/Documents_importants/scolarité/These/Stats/binary_dgmm/asta/bad_asta_code/temp2.npy')
-
-
-temp2.shape
-zexTzex = zex[...,np.newaxis] @ np.transpose(zex[...,np.newaxis], (0, 2, 1))
-np.diagonal(zexTzex).shape
-np.atleast_3d(np.diagonal(np.mean(zTz, axis = 0),axis1 = 1, axis2 = 2)) 
-
-np.mean(zTz, 0).shape
-
-
-import matplotlib.pyplot as plt
-plt.scatter(Ez_y[:,0], z[:,0])
-plt.scatter(Ez_y[:,1], z[:,1])
-
-z[:,0].min()
-
-plt.hist(Ez_y[:,1])
-E_zz_sy.shape
-
-z.shape
-Ez_y[:,0].shape
-
-help(plt.plot)
-
-
-z[...,np.newaxis] @ np.transpose(z[...,np.newaxis], (1, 0))
-
-Ezz_y = 0
-for i in range(k):
-    Ezz_y = Ezz_y + ps_y[:, i][...,np.newaxis, np.newaxis] * E_zz_sy[:, i, :, :]
-plt.scatter(Ezz_y[:,0, 1], z.T.reshape(500,1) * z.reshape(500,1))
-
 
 ########################
 # MV debug (thingers crossed!!)
 #########################
-r = 2
+r = 3
 p1 = 3
-numobs = 1000
+numobs = 1500
+M = 4000
 init = init_params(r, p, p1, p2, o, szo, k, seed)
 
-init['alpha']
-
-z, labels = gen_mv_z(numobs, r, init, seed)
-y = gen_mvdata(z, init, seed = None)
-
-it = 10
 var_distrib = np.array(["bernoulli","bernoulli","binomial","ordinal"])
 nj= np.array([1,1,10,5])
 eps = 1E-05
-it = 20
+it = 1
 maxstep = 10
 seed = 1
-M = 900
 k = 3
+
+
+z, labels = gen_mv_z(numobs, r, init, seed)
+y = gen_mvdata(z, init, seed = None)
 
 random_init = init_params(r, p, p1, p2, o, szo, k, None)
 
