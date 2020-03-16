@@ -5,7 +5,11 @@ Created on Thu Feb 13 09:43:11 2020
 @author: Utilisateur
 """
 
-import numpy as np
+import autograd.numpy as np
+from autograd import grad
+#import numpy as np
+
+from lik_functions import ord_lik_opt
 
 def binom_gr_lik_opt(alpha, y, zM, k, ps_y, p_z_ys, nj):    
     r = zM.shape[1]
@@ -125,6 +129,7 @@ def ord_gr_lik(theta, y_oh, zM, k, o1, ps_y, p_z_ys):
 
 def ord_gr_lik_block(lambda_ord, y_oh, zM, k, ps_y, p_z_ys, nj_ord):
     ''' Compute the likelihood gradients of the categorical data
+    Maybe flawned... Autograd result is very different
     '''
     
     r = zM.shape[1]
@@ -185,3 +190,8 @@ def ord_gr_lik_block(lambda_ord, y_oh, zM, k, ps_y, p_z_ys, nj_ord):
             np.sum(broad_p_z_y_s * der_log_pyz_Lambda, 0), axis = (2, 3, 4))                    
         
     return np.hstack([lambda0_grad, Lambda_grad]).flatten()
+
+
+def ord_autograd(lambda_ord_j, y_oh, zM, k, nj_ord_j, ps_y_new, p_z_ys_new):
+    grad_ord_lik = grad(ord_lik_opt)
+    return grad_ord_lik(lambda_ord_j, y_oh, zM, k, nj_ord_j, ps_y_new, p_z_ys_new)

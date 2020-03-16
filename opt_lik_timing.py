@@ -195,3 +195,7 @@ opt = minimize(categ_lik_opt, theta, args = (y_oh, zM, k, o1, ps_y, p_z_ys),
 dir(linear_constraint)
 linear_constraint.A @ theta[np.newaxis].T
 lcs @ theta[np.newaxis].T
+
+
+
+# Hard computed gradient vs JAX

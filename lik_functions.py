@@ -5,7 +5,8 @@ Created on Tue Feb 11 19:33:27 2020
 @author: Utilisateur
 """
 
-import numpy as np
+import autograd.numpy as np
+#import numpy as np
 from scipy.special import binom
 import warnings
 warnings.filterwarnings('default')
@@ -120,8 +121,8 @@ def ord_lik_opt(theta, y_oh, zM, k, o1, ps_y, p_z_ys):
     thro = theta[:(o1 - 1)]
     alphao = theta[o1 - 1:(len(theta) + 1)]
  
-    broad_thro = thro.reshape(o1 - 1, 1, 1, 1)
-    eta = broad_thro - (np.transpose(zM, (0, 2, 1)) @ alphao.reshape(1, r, 1))[np.newaxis]
+    broad_thro = thro.reshape((o1 - 1, 1, 1, 1))
+    eta = broad_thro - (np.transpose(zM, (0, 2, 1)) @ alphao.reshape((1, r, 1)))[np.newaxis]
     
     gamma = 1 / (1 + np.exp(-eta))
     gamma_prev = np.concatenate([np.zeros((1,M, k, 1)), gamma])
@@ -152,7 +153,7 @@ def compute_py_zM_ord(lambda_ord, y_oh, zM, k, nj_ord):
      
     broad_thro = lambda0.reshape(nb_ord, max_nj_ord - 1, 1)[np.newaxis] 
     eta = broad_thro - np.expand_dims(Lambda[np.newaxis] @ zM, 2) 
-
+    
     gamma = 1 / (1 + np.exp(-eta))
     gamma_prev = np.concatenate([np.zeros((M, nb_ord, 1, k)), gamma], 2)
     gamma_next = np.concatenate([gamma, np.ones((M, nb_ord, 1, k))], 2)
