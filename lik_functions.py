@@ -157,11 +157,11 @@ def compute_py_zM_ord(lambda_ord, y_oh, zM, k, nj_ord):
     gamma = 1 / (1 + np.exp(-eta))
     gamma_prev = np.concatenate([np.zeros((M, nb_ord, 1, k)), gamma], 2)
     gamma_next = np.concatenate([gamma, np.ones((M, nb_ord, 1, k))], 2)
-    pi = gamma_next - gamma_prev
+    pi = gamma_next - gamma_prev  
     
     yg = y_oh[np.newaxis,..., np.newaxis] 
     log_p_y_z = yg * np.log(np.expand_dims(pi, axis=2)) # Using sparse format could accelerate things up
-   
+
     return log_p_y_z.sum((1, 3))
 
 

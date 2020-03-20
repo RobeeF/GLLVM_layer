@@ -8,19 +8,15 @@ Created on Fri Mar  6 08:52:28 2020
 import autograd.numpy as np
 
 from autograd.numpy import newaxis as n_axis
-from autograd.numpy import expand_dims as exp_dim
+from autograd.numpy import transpose as t
+
 from autograd.numpy.random import multivariate_normal
 from autograd.numpy.linalg import cholesky, pinv
 
 
-#import numpy as np 
-#from numpy import newaxis as n_axis
-#from numpy import expand_dims as exp_dim
 from scipy.linalg import block_diag
-#from numpy.random import multivariate_normal
 from sklearn.preprocessing import OneHotEncoder
 from scipy.stats import multivariate_normal as mvnorm
-#from numpy.linalg import cholesky, pinv
  
 from lik_functions import compute_py_zM_bin, compute_py_zM_ord
 from lik_gradients import ord_autograd, bin_autograd
@@ -64,45 +60,43 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
     nj_ord = nj[var_distrib == 'ordinal']
     nb_ord = len(nj_ord)
     max_nj_ord = max(nj_ord)
-    #fake_ord = np.random.sample()
-    
-    # Simulate pseudo-observations
-    zM = multivariate_normal(size = (M, 1), mean = mu.flatten(order = 'F'), cov = block_diag(*sigma)) 
-    zM = np.transpose(zM.reshape(M, k, r, order = 'F'), (0, 2, 1))
-    
+                     
     while ((hh < it) & (ratio > eps)):
         hh = hh + 1
+        
+        # Simulate pseudo-observations
+        zM = multivariate_normal(size = (M, 1), mean = mu.flatten(order = 'F'), cov = block_diag(*sigma)) 
+        zM = t(zM.reshape(M, k, r, order = 'F'), (0, 2, 1))
+        
         ###### Compute the p(y| zM) for all variable categories ########
+        
         # First the Binomial data
         py_zM_bin = compute_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin) # shape = (M,k,numobs)
-        
-        # Then the categorical variables
-        # One hot encoding, is this better than a loop ? List comprehension ?
-        
+                
+        # Then the categorical variables        
         # A regler !!! Pour des variables ordinales ayant des tailles différentes ont fait comment ?
         enc = OneHotEncoder(categories='auto')
         y_oh = []
         for j in range(len(nj_ord)):
             y_oh.append(enc.fit_transform(y_ord[:,j][..., n_axis]).toarray())
         y_oh = np.stack(y_oh)
+                
+        py_zM_ord = compute_py_zM_ord(lambda_ord, y_oh, zM, k, nj_ord) 
+        py_zM = py_zM_bin + py_zM_ord 
         
-        py_zM_ord = compute_py_zM_ord(lambda_ord, y_oh, zM, k, nj_ord)
-        py_zM_new = py_zM_bin + py_zM_ord #/ 2
-        
-        py_zM_new = np.exp(py_zM_new)
-        py_zM_new = np.where(py_zM_new <= 1E-20, 1E-20, py_zM_new)
+        py_zM = np.exp(py_zM)
         
         #####################################################################################
         ############################ E step #################################################
         #####################################################################################
         
         # Resample zM conditionally on y 
-        qM_new = py_zM_new / np.sum(py_zM_new, axis = 0, keepdims = True)
+        qM = py_zM / np.sum(py_zM, axis = 0, keepdims = True)
         new_zM = np.zeros((M,numobs, r, k))
         
         new_zM = np.zeros((M, numobs, r, k))
         for i in range(k):
-            qM_cum = qM_new[:,:, i].T.cumsum(axis=1)
+            qM_cum = qM[:,:, i].T.cumsum(axis=1)
             u = np.random.rand(numobs, 1, M)
             
             choices = u < qM_cum[..., np.newaxis]
@@ -112,68 +106,69 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         
         del(u)
         
-        pz_s_new = np.zeros((M, 1, k))
+        pz_s = np.zeros((M, 1, k))
                 
         for i in range(k): # Have to retake the function for DGMM to parallelize or use apply along axis
-            pz_s_new[:,:, i] = mvnorm.pdf(zM[:,:,i], mean = mu[i], cov = sigma[i])[..., n_axis]
+            pz_s[:,:, i] = mvnorm.pdf(zM[:,:,i], mean = mu[i].flatten(), cov = sigma[i])[..., n_axis]
                 
         # Compute (17) p(y | s_i = 1)
-        pz_s_norm_new = pz_s_new / np.sum(pz_s_new, axis = 0, keepdims = True) 
-        py_s_new = (pz_s_norm_new * py_zM_new).sum(axis = 0)
+        pz_s_norm = pz_s / np.sum(pz_s, axis = 0, keepdims = True) 
+        py_s = (pz_s_norm * py_zM).sum(axis = 0)
         
         # Compute (16) p(z |y, s) 
-        p_z_ys_new = py_s_new * py_zM_new / py_s_new[n_axis]
+        p_z_ys = py_s * py_zM / py_s[n_axis]
         
         # Free some memory
-        del(py_zM_new)
-        del(pz_s_norm_new)
-        del(pz_s_new)
-        del(qM_new)
+        del(py_zM)
+        del(pz_s_norm)
+        del(pz_s)
+        del(qM)
         del(y_oh)
         
         # Compute unormalized (18)
-        ps_y_new = w.T * py_s_new
-        ps_y_new = ps_y_new / np.sum(ps_y_new, axis = 1, keepdims = True)        
-        p_y_new = py_s_new @ w
+        ps_y = w[n_axis] * py_s
+        ps_y = ps_y / np.sum(ps_y, axis = 1, keepdims = True)        
+        p_y = py_s @ w
         
         # Compute E_{y,s}(z) and E_{y,s}(zTz)
-        E_z_sy_new = np.transpose(np.mean(new_zM, axis = 0), (0, 2, 1)) # Remove transpose later on
-        zTz_new = (np.transpose(new_zM[...,n_axis], (0, 1, 3, 2, 4)) @ \
-                   np.transpose(new_zM[...,n_axis], (0, 1, 3, 4, 2)))
-        E_zz_sy_new = np.mean(zTz_new, axis = 0)
+        E_z_sy = t(np.mean(new_zM, axis = 0), (0, 2, 1)) # Remove transpose later on
+        zTz = (t(new_zM[...,n_axis], (0, 1, 3, 2, 4)) @ \
+                   t(new_zM[...,n_axis], (0, 1, 3, 4, 2)))
+        E_zz_sy = np.mean(zTz, axis = 0)
         
-        # Compute E_{y}(z) and E_{y}(zTz)
-        #Ez_y_new = (ps_y_new[...,n_axis] * E_z_sy_new).sum(1)
-        
+        # Compute E_y(z) and E_y(zTz)
+        Ez_y = (ps_y[...,n_axis] * E_z_sy).sum(1)
+                
         del(new_zM)
             
         # Normalizing p(z|y,s)
-        p_z_ys_new = p_z_ys_new / np.sum(p_z_ys_new, axis = 0, keepdims = True)
+        p_z_ys = p_z_ys / np.sum(p_z_ys, axis = 0, keepdims = True)
                 
-        # Enforce identifiability conditions
-        w_new = np.mean(ps_y_new, axis = 0)
-        den_new = ps_y_new.sum(0, keepdims = True).T
-        den_new = np.where(den_new < 1E-14, 1E-14, den_new)
+        # Computing Gaussian Parameters
+        w = np.mean(ps_y, axis = 0)
+        den = ps_y.sum(0, keepdims = True).T[..., n_axis]
+        den = np.where(den < 1E-14, 1E-14, den)
         
-        mu_new = (ps_y_new[...,n_axis] * E_z_sy_new).sum(0) / den_new
-        muTmu = mu_new[..., n_axis] @ exp_dim(mu_new, 1)
-        sigma_new = np.sum(ps_y_new[..., n_axis, n_axis] * (E_zz_sy_new - \
-                    muTmu[n_axis]), axis = 0) / den_new[..., n_axis]
+        mu = (ps_y[...,n_axis] * E_z_sy).sum(0)[..., np.newaxis] / den
+
+        muTmu = mu @ t(mu, (0,2,1))  
+        sigma = np.sum(ps_y[..., n_axis, n_axis] * (E_zz_sy - \
+                    muTmu[n_axis]), axis = 0) / den
+         
+        # Enforcing identifiability constraints
+        E_zzT = (w[..., n_axis, n_axis] * (sigma + muTmu)).sum(0, keepdims = True)
+        Ezz_T = (w[...,n_axis, n_axis] * mu).sum(0, keepdims = True)
+
+        var_z = E_zzT - Ezz_T @ t(Ezz_T, (0,2,1)) # Koenig-Huyghens Formula for Variance Computation
+        sigma_z = cholesky(var_z)
         
-        mu_var = (w_new[..., n_axis, n_axis] * (sigma_new + muTmu)).sum(0)
-        w_mu = (w_new[..., n_axis] * mu_new).sum(0, keepdims = True)
+        sigma = pinv(sigma_z) @ sigma @ t(pinv(sigma_z), (0, 2, 1))
+        mu = pinv(sigma_z) @ mu
+        mu  = mu  - Ezz_T
         
-        var_z_new = mu_var - w_mu.T @ w_mu
-        sigma_z = cholesky(var_z_new)
-        
-        sigma_new = pinv(sigma_z).T[n_axis] @ sigma_new @ pinv(sigma_z)[n_axis]
-        mu_new = mu_new @ pinv(sigma_z)
-        
-        mu_tot_new = w_new.T @ mu_new
-        mu_new = mu_new - mu_tot_new
-        
-        del(E_z_sy_new)
-        del(E_zz_sy_new)
+        del(E_z_sy)
+        del(E_zz_sy)
+         
         
         ###########################################################################
         ############################ M step #######################################
@@ -184,7 +179,7 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         
         for j in range(nb_bin):
             # Add initial guess and lim iterations
-            opt = minimize(binom_lik_opt, lambda_bin[j,:], args = (y_bin[:,j], zM, k, ps_y_new, p_z_ys_new, nj_bin[j]), 
+            opt = minimize(binom_lik_opt, lambda_bin[j,:], args = (y_bin[:,j], zM, k, ps_y, p_z_ys, nj_bin[j]), 
                            tol = tol, method='BFGS', jac = bin_autograd, options = {'maxiter': maxstep})
                 
             if not(opt.success):
@@ -209,7 +204,7 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
             
             warnings.filterwarnings("default")
         
-            opt = minimize(ord_lik_opt, lambda_ord[j] , args = (y_oh, zM, k, nj_ord[j], ps_y_new, p_z_ys_new), 
+            opt = minimize(ord_lik_opt, lambda_ord[j] , args = (y_oh, zM, k, nj_ord[j], ps_y, p_z_ys), 
                                tol = tol, method='trust-constr',  jac = ord_autograd, \
                                constraints = linear_constraint, hess = '2-point', options = {'maxiter': maxstep})
             
@@ -221,23 +216,22 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
                         
         # Last identifiability part
         lambda_bin = np.tril(lambda_bin, k = 1)
-        lambda_bin[:,1:] = lambda_bin[:,1:] @ sigma_z.T
-        lambda_ord[:, max_nj_ord - 1 :] = lambda_ord[:, max_nj_ord - 1 :] @ sigma_z.T
+        lambda_bin[:,1:] = lambda_bin[:,1:] @ sigma_z[0] 
+        lambda_ord[:, max_nj_ord - 1 :] = lambda_ord[:, max_nj_ord - 1 :] @ sigma_z[0]
         
-        new_lik = np.sum(np.log(p_y_new))
+        new_lik = np.sum(np.log(p_y))
         likelihood.append(new_lik)
         ratio = (new_lik - prev_lik)/abs(prev_lik)
         
-        if (hh < 10): 
+        if (hh < 3): 
             ratio = 2 * eps
         prev_lik = new_lik
         print(hh)
         print(likelihood)
         
-    classes = np.argmax(ps_y_new, axis = 1) 
+    classes = np.argmax(ps_y, axis = 1) 
 
     out = dict(lambda_bin = lambda_bin, lambda_ord = lambda_ord, \
                 w = w, mu = mu, sigma = sigma, likelihood = likelihood, \
                 classes = classes)
     return(out)
-

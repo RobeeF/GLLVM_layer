@@ -7,9 +7,12 @@ Created on Mon Feb 10 16:55:44 2020
 
 import autograd.numpy as np
 from autograd.numpy.random import uniform
-#import numpy as np
-#from numpy.random import uniform
+
 from gllvm_block import gllvm
+from autograd.numpy import newaxis as n_axis
+from autograd.numpy import transpose as t
+
+from autograd.numpy.linalg import cholesky, pinv
 
 def init_params(r, nj_bin, nj_ord, k, init_seed):
     ''' Generate random initialisations for the parameters
@@ -37,43 +40,57 @@ def init_params(r, nj_bin, nj_ord, k, init_seed):
     if (r > 1): 
         init['lambda_bin'] = np.tril(init['lambda_bin'], k = 1)
 
-    init['w'] = np.full(k, 1/k).reshape(k,1) # Check for transpose ? 
+    init['w'] = np.full(k, 1/k) 
     
-    # Maybe -5, 0, 5 was better ?
     mu_init = np.repeat([[-1], [0], [1]], axis = 1, repeats = r)
     init['mu'] = (uniform(low = -5, high = 5, size = (1,1)) * mu_init)
+    init['mu'] = init['mu'][..., np.newaxis]
   
     # Will have to define diag matrix
     init['sigma'] = np.zeros(shape = (k, r, r))
     for i in range(k):
-        init['sigma'][i,: , :] = 0.50 * np.eye(r)# Too low ?
-  
+        init['sigma'][i,: , :] = 0.050 * np.eye(r)
+        
+    # Enforcing identifiability constraints
+
+    muTmu = init['mu'] @ t(init['mu'], (0,2,1))  
+     
+    E_zzT = (init['w'][..., n_axis, n_axis] * (init['sigma'] + muTmu)).sum(0, keepdims = True)
+    Ezz_T = (init['w'][...,n_axis, n_axis] * init['mu']).sum(0, keepdims = True)
+    
+    # A vérifier
+    var_z = E_zzT - Ezz_T @ t(Ezz_T, (0,2,1)) # Koenig-Huyghens Formula for Variance Computation
+    sigma_z = cholesky(var_z)
+     
+    init['sigma'] = pinv(sigma_z) @ init['sigma'] @ t(pinv(sigma_z), (0, 2, 1))
+    init['mu'] = pinv(sigma_z) @ init['mu']
+    init['mu']  = init['mu']  - Ezz_T
+   
     return(init)
 
-def init_cv(y,  k, var_distrib, r, nj, seed = None):
+
+def init_cv(y, var_distrib, r, nj_bin, nj_ord, k, seed):
     ''' Test 20 different inits for a few iterations and returns the best one'''
     
     numobs = y.shape[0]
-    p = y.shape[1]
-    p2 = sum(np.array(var_distrib) == "ordinal")
-    p1 = p - p2
-    o = nj[var_distrib == "ordinal"][0] # Dirty hack to remove when several ordinal variables
-    szo = o # Dirty hack to remove when several ordinal variables
   
-    nb_init_tested = 5
-    M = 300
+    nb_init_tested = 10
+    M = 20
     best_lik = -1000000
     best_init = {}
-    nb_it = 3
-    maxstep = 0
+    nb_it = 2
+    maxstep = 100
     eps = 1E-5
+    nj = np.concatenate([nj_bin, nj_ord])
 
     for i in range(nb_init_tested):
-        init = init_params(r, p, p1, p2, o, szo, k, init_seed = None)
-        out_pilot_mc = gllvm(y, numobs, r, k, p, p1, p2, nb_it, o, szo, init, eps, maxstep, 
-                             var_distrib, nj, M, seed)
+        init = init_params(r, nj_bin, nj_ord, k, None)
+        try:
+            out = gllvm(y, numobs, r, k, nb_it, init, eps, maxstep, var_distrib, nj, M, seed)
+        except:
+            continue
 
-        lik = out_pilot_mc['likelihood'][-1]
+        lik = out['likelihood'][-1]
     
         if (best_lik < lik):
             best_lik = lik
