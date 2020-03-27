@@ -6,7 +6,6 @@ Created on Tue Feb 11 19:33:27 2020
 """
 
 import autograd.numpy as np
-#import numpy as np
 from scipy.special import binom
 import warnings
 warnings.filterwarnings('default')
@@ -80,40 +79,6 @@ def binom_lik_block(lambda_bin, y_bin, zM, k, ps_y, p_z_ys, nj_bin):
 ######################################################################
 # Ordinal likelihood functions
 ######################################################################
-
-def categ_lik(theta, y, zM, k, o1, ps_y, p_z_ys):
-    #r = zM.shape[1]
-    M = zM.shape[0]
-    numobs = len(y)
-    thro = theta[:(o1 - 1)]
-    alphao = theta[o1 - 1:(len(theta) + 1)]
-    temp = np.zeros(numobs)
-    num = np.zeros((o1 - 1, M, numobs))
-    den = np.zeros((o1 - 1, M, numobs))
-    log_p_y_z = np.zeros((M, numobs))
-
-    for i in range(k):
-        for s in range(o1):
-            if (s < o1 - 1): 
-                exp_eta = np.repeat(np.exp(thro[s] - zM[:,:, i] @ alphao[...,np.newaxis]), axis = 1, \
-                                    repeats =  numobs)
-                num[s, :, :] = exp_eta
-                den[s, :, :] = (1 + exp_eta)
-                
-            yg_s = np.repeat((y == s + 1)[np.newaxis], axis = 0, repeats = M)  
-         
-            if (s == 0): # Pourquoi pas de passage au log ici ?
-                log_p_y_z = yg_s * np.log((num[s,: ,:]/den[s, :, :]))
-            if (s > 0 and s < o1 - 1): 
-                log_p_y_z = yg_s * np.log((num[s, :, :]/den[s, :, :] - num[s - 1, :, :]/den[s - 1, :, :]))
-            
-            if (s == o1 - 1): 
-                log_p_y_z = yg_s * np.log((1 - num[s - 1, :, :]/den[s - 1, :, :]))
-    
-            temp = temp + ps_y[:, i] * np.sum(p_z_ys[:, :, i] * log_p_y_z, axis = 0)
-            
-    return - np.sum(temp)
-
 
 def ord_lik_opt(theta, y_oh, zM, k, o1, ps_y, p_z_ys):
     r = zM.shape[1]

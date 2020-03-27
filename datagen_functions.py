@@ -5,15 +5,16 @@ Created on Wed Feb  5 17:45:45 2020
 @author: Utilisateur
 """
 
-import autograd.numpy as np
-from numpy.random import multivariate_normal, uniform, binomial
-import matplotlib.pyplot as plt
 import os
 
 os.chdir('C:/Users/rfuchs/Documents/GitHub/GLLVM_layer')
 from init_params import init_params, init_cv
 from misc import misc
 from gllvm_block import gllvm
+
+import autograd.numpy as np
+from numpy.random import multivariate_normal, uniform, binomial
+import matplotlib.pyplot as plt
 
 numobs = 100
 seed = None
@@ -39,7 +40,6 @@ def gen_z(numobs, seed):
                 labels[i] = dim
     return z, labels
 
-z, labels = gen_z(500, 1)
 
 def gen_data(z, seed = None):
     np.random.seed = seed
@@ -142,6 +142,8 @@ def gen_mvdata(z, init, seed = None):
     max_nj_ord = 5
     y = np.zeros(shape = (numobs, p))
     
+    r = init['lambda_bin'].shape[1] - 1
+    
     ######## gen binary and count #################
     pred = init['lambda_bin'] @ np.vstack([np.ones((1, numobs)), z.T]) 
     probbin = np.exp(pred) / (1 + np.exp(pred))
@@ -158,7 +160,6 @@ def gen_mvdata(z, init, seed = None):
     ########gen ordinal#############
     probor = np.zeros(shape = (numobs, max_nj_ord, p3))
       
-    # Erreur... A reprendre
     lambda0 = init['lambda_ord'][:, :(max_nj_ord - 1)] # Shape (nb_ord, max_nj_ord)
     Lambda = init['lambda_ord'][:,(max_nj_ord - 1) :(max_nj_ord + r)] # Shape (nb_ord, r)
     

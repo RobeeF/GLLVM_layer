@@ -1,0 +1,5 @@
+bevel/__pycache__/*
+tests/__pycache__/*
+*.pyc
+**/.cache/*
+.DS_Store

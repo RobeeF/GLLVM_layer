@@ -85,6 +85,8 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         py_zM = py_zM_bin + py_zM_ord 
         
         py_zM = np.exp(py_zM)
+        py_zM = np.where(py_zM == 0, 1E-40, py_zM)
+
         
         #####################################################################################
         ############################ E step #################################################
@@ -137,7 +139,7 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         E_zz_sy = np.mean(zTz, axis = 0)
         
         # Compute E_y(z) and E_y(zTz)
-        Ez_y = (ps_y[...,n_axis] * E_z_sy).sum(1)
+        #Ez_y = (ps_y[...,n_axis] * E_z_sy).sum(1)
                 
         del(new_zM)
             
@@ -225,11 +227,15 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         
         if (hh < 3): 
             ratio = 2 * eps
-        prev_lik = new_lik
         print(hh)
         print(likelihood)
         
-    classes = np.argmax(ps_y, axis = 1) 
+        # Refresh the classes only if they provide a better explanation of the data
+        if prev_lik > new_lik:
+            classes = np.argmax(ps_y, axis = 1) 
+            
+        prev_lik = new_lik
+
 
     out = dict(lambda_bin = lambda_bin, lambda_ord = lambda_ord, \
                 w = w, mu = mu, sigma = sigma, likelihood = likelihood, \
