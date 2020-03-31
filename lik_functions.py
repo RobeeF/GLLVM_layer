@@ -44,7 +44,7 @@ def binom_loglik_j(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j): # Pass
 
 
 def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j): # Passer plus de chose en argument
-     ''' Compute sum_j log p(y_j | zM, s1 = k1) of the jth
+    ''' Compute sum_j log p(y_j | zM, s1 = k1) of the jth
     lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
     y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
     zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
@@ -69,7 +69,6 @@ def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j): # Passer plus de ch
     
     return np.transpose(log_p_y_z, (0, 2, 1))
 
-
 def log_py_zM_bin_seq(lambda_bin, y_bin, zM, k, nj_bin):
     ''' Compute sum_j log p(y_j | zM, s1 = k1) of all the binomial data with a for loop
     lambda_bin (nb_bin x (r + 1) ndarray): Coefficients of the binomial distributions in the GLLVM layer
@@ -86,6 +85,21 @@ def log_py_zM_bin_seq(lambda_bin, y_bin, zM, k, nj_bin):
         log_py_zM += log_py_zM_bin_j(lambda_bin[j], y_bin[:,j], zM, k, nj_bin[j])
         
     return log_py_zM
+
+def binom_loglik_j2(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
+    ''' Compute the expected log-likelihood for each binomial variable y_j
+    lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
+    y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    ps_y (numobs x k ndarray): p(s_i = k1 | y_i) for all k1 in [1,k] and i in [1,numobs]
+    p_z_ys (M x numobs x k ndarray): p(z_i | y_i, s_i = k) for all m in [1,M], k1 in [1,k] and i in [1,numobs]
+    nj_bin_j (int): The number of possible values/maximum values of the jth binary/count variable
+    --------------------------------------------------------------
+    returns (float): E_{zM, s | y, theta}(y_bin_j | zM, s1 = k1)
+    ''' 
+    log_pyzM_j = log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j)
+    return -np.sum(ps_y * np.sum(p_z_ys * log_pyzM_j, axis = 0))
 
 def log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin): 
     ''' Compute sum_j log p(y_j | zM, s1 = k1) of all the binomial data at once

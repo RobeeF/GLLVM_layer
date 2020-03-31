@@ -200,5 +200,7 @@ lcs @ theta[np.newaxis].T
 
 # Hard computed gradient vs JAX
 
-
+lambda_bin_j = lambda_bin[0]
+y_bin_j = y_bin[:,0]
+nj_bin_j = nj_bin[0]
 
