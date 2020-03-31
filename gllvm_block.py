@@ -7,7 +7,7 @@ Created on Fri Mar  6 08:52:28 2020
 
 
 from lik_functions import log_py_zM_bin, log_py_zM_ord, binom_loglik_j, ord_loglik_j
-from lik_gradients import ord_autograd, bin_autograd
+from lik_gradients import bin_grad_j, ord_grad_j
 
 import autograd.numpy as np
 from autograd.numpy import newaxis as n_axis
@@ -131,7 +131,7 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         E_zz_sy = np.mean(zTz, axis = 0)
         
         # Compute E_y(z) and E_y(zTz)
-        Ez_y = (ps_y[...,n_axis] * E_z_sy).sum(1)
+        #Ez_y = (ps_y[...,n_axis] * E_z_sy).sum(1)
                 
         del(new_zM)
                 
@@ -170,7 +170,7 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         for j in range(nb_bin):
             # Add initial guess and lim iterations
             opt = minimize(binom_loglik_j, lambda_bin[j,:], args = (y_bin[:,j], zM, k, ps_y, p_z_ys, nj_bin[j]), 
-                           tol = tol, method='BFGS', jac = bin_autograd, options = {'maxiter': maxstep})
+                           tol = tol, method='BFGS', jac = bin_grad_j, options = {'maxiter': maxstep})
                 
             if not(opt.success):
                 raise RuntimeError('Binomial optimization failed')
@@ -187,6 +187,7 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
             enc = OneHotEncoder(categories='auto')
             y_oh = enc.fit_transform(y_ord[:,j][..., n_axis]).toarray()                
             
+            # Define the constraints such that the threshold coefficients are ordered
             nb_constraints = nj_ord[j] - 2
             np_params = lambda_ord[j].shape[0]
             lcs = np.full(nb_constraints, -1)
@@ -201,7 +202,7 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
             warnings.filterwarnings("default")
         
             opt = minimize(ord_loglik_j, lambda_ord[j] , args = (y_oh, zM, k, ps_y, p_z_ys, nj_ord[j]), 
-                               tol = tol, method='trust-constr',  jac = ord_autograd, \
+                               tol = tol, method='trust-constr',  jac = ord_grad_j, \
                                constraints = linear_constraint, hess = '2-point', options = {'maxiter': maxstep})
             
             if not(opt.success):

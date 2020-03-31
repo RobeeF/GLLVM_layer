@@ -68,7 +68,7 @@ k = 2
 seed = 1
 init_seed = 2
     
-var_distrib = np.array(["binomial","bernoulli","bernoulli","bernoulli", 'bernoulli', 'binomial', 'binomial'])
+var_distrib = np.array(["binomial","ordinal","bernoulli","bernoulli", 'bernoulli', 'binomial', 'binomial'])
 
 nj = []
 nj_bin = []

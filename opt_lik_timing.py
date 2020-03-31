@@ -200,23 +200,5 @@ lcs @ theta[np.newaxis].T
 
 # Hard computed gradient vs JAX
 
-from time import time
-t = np.zeros(10)
-for i in range(10):
-    start = time()
-    a = log_py_zM_ord(lambda_ord, y_ord, zM, k, nj_ord)[:,:,:,0]
-    end = time()
-    t[i] = end - start
-    
-t.mean()
 
-from time import time
-t = np.zeros(10)
-for i in range(10):
-    start = time()
-    a = log_py_zM_ord_block(lambda_ord, y_ord, zM, k, nj_ord)
-    end = time()
-    t[i] = end - start
-    
-t.mean()
 

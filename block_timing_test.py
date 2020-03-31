@@ -103,3 +103,44 @@ end = time()
 print(end- start)
 
 hess_ord_lik(lambda_ord[col_nb], y_oh, zM, k, nj_ord[col_nb], ps_y_new, p_z_ys_new)
+
+
+
+
+t = np.zeros(10)
+for i in range(10):
+    start = time()
+    log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin)    
+    end = time()
+    t[i] = (end-start)
+
+t2 = np.zeros(10)
+for i in range(10):
+    start = time()
+    grad_ord_lik(lambda_ord[col_nb], y_oh, zM, k, nj_ord[col_nb], ps_y_new, p_z_ys_new)
+    end = time()
+    t2[i] = (end-start)
+      
+print(t.mean())
+print(t2.mean())
+
+
+from time import time
+
+t = np.zeros(100)
+for i in range(100):
+    start = time()
+    log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin)
+    end = time()
+    t[i] = end - start
+    
+t.mean()
+
+t = np.zeros(100)
+for i in range(100):
+    start = time()
+    log_py_zM_bin_seq(lambda_bin, y_bin, zM, k, nj_bin)
+    end = time()
+    t[i] = end - start
+    
+t.mean()
