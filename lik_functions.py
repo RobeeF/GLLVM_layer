@@ -13,37 +13,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 warnings.filterwarnings('default')
 
-
-def binom_loglik_j(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j): # Passer plus de chose en argument
-    ''' Compute the expected log-likelihood for each binomial variable y_j
-    lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
-    y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
-    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
-    k (int): The number of components of the mixture
-    ps_y (numobs x k ndarray): p(s_i = k1 | y_i) for all k1 in [1,k] and i in [1,numobs]
-    p_z_ys (M x numobs x k ndarray): p(z_i | y_i, s_i = k) for all m in [1,M], k1 in [1,k] and i in [1,numobs]
-    nj_bin_j (int): The number of possible values/maximum values of the jth binary/count variable
-    --------------------------------------------------------------
-    returns (float): E_{zM, s | y, theta}(y_bin_j | zM, s1 = k1)
-    '''    
-    M = zM.shape[0]
-    r = zM.shape[1]
-    numobs = len(y_bin_j)
-    
-    yg = np.repeat(y_bin_j[np.newaxis], axis = 0, repeats = M)
-    coeff_binom = binom(nj_bin_j, yg).reshape(M, 1, numobs)
-    
-    eta = np.transpose(zM, (0, 2, 1)) @ lambda_bin_j[1:].reshape(1, r, 1)
-    eta = eta + lambda_bin_j[0].reshape(1, 1, 1) # Add the constant
-    
-    den = nj_bin_j * np.log(1 + np.exp(eta))
-    num = eta @ y_bin_j[np.newaxis, np.newaxis]
-    log_p_y_z = num - den + np.log(coeff_binom)
-    
-    return -np.sum(ps_y * np.sum(p_z_ys * np.transpose(log_p_y_z, (0, 2, 1)), axis = 0))
-
-
-def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j): # Passer plus de chose en argument
+def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j): 
     ''' Compute sum_j log p(y_j | zM, s1 = k1) of the jth
     lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
     y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
@@ -86,7 +56,7 @@ def log_py_zM_bin_seq(lambda_bin, y_bin, zM, k, nj_bin):
         
     return log_py_zM
 
-def binom_loglik_j2(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
+def binom_loglik_j(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
     ''' Compute the expected log-likelihood for each binomial variable y_j
     lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
     y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
@@ -101,52 +71,6 @@ def binom_loglik_j2(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
     log_pyzM_j = log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j)
     return -np.sum(ps_y * np.sum(p_z_ys * log_pyzM_j, axis = 0))
 
-def log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin): 
-    ''' Compute sum_j log p(y_j | zM, s1 = k1) of all the binomial data at once
-    lambda_bin (nb_bin x (r + 1) ndarray): Coefficients of the binomial distributions in the GLLVM layer
-    y_bin (numobs x nb_bin ndarray): The subset containing only the binary/count variables in the dataset
-    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
-    k (int): The number of components of the mixture
-    nj_bin (nb_bin x 1d-array): The number of possible values/maximum values of binary/count variables respectively
-    --------------------------------------------------------------
-    returns (ndarray): The sum_j p(y_j | zM, s1 = k1)
-    '''
-    M = zM.shape[0]
-        
-    yg = np.repeat(y_bin[np.newaxis], axis = 0, repeats = M)
-    
-    coeff_binom = binom(nj_bin[np.newaxis, np.newaxis], yg)
-    coeff_binom = np.transpose(coeff_binom, (0, 2, 1))
-    coeff_binom = np.expand_dims(coeff_binom, 2)
-    
-    eta = lambda_bin[:,1:][np.newaxis] @ zM # shape = (M, nb_bin, k)
-    eta = eta + lambda_bin[:,0][np.newaxis, ..., np.newaxis] # Add the constant
-    
-    den = nj_bin[np.newaxis, ..., np.newaxis] * np.log(1 + np.exp(eta))
-    num = np.expand_dims(y_bin.T[np.newaxis], 2) * eta[...,np.newaxis]
-    log_p_y_z = num - den[..., np.newaxis] + np.log(coeff_binom)
-
-    return np.transpose(log_p_y_z.sum(1), (0, 2, 1))    
-    
-def binom_loglik(lambda_bin, y_bin, zM, k, ps_y, p_z_ys, nj_bin):
-    ''' Compute expected log-likelihood of all the binomial variables at once
-    lambda_bin (nb_bin x (r + 1) ndarray): Coefficients of the binomial distributions in the GLLVM layer
-    y_bin (numobs x nb_bin ndarray): The subset containing only the binary/count variables in the dataset
-    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
-    k (int): The number of components of the mixture
-    ps_y (numobs x k ndarray): p(s_i = k1 | y_i) for all k1 in [1,k] and i in [1,n]
-    p_z_ys (M x numobs x k ndarray): p(z_i | y_i, s_i = k) for all m in [1,M], k1 in [1,k] and i in [1,numobs]
-    nj_bin (nb_bin x 1d-array): The number of possible values/maximum values of binary/count variables respectively
-    --------------------------------------------------------------
-    returns (float): E_{zM, s | y, theta}(y_bin | zM, s1 = k1)
-    '''
-    # Deflatten lambda_bin
-    nb_bin = y_bin.shape[1]
-    r = zM.shape[1]
-    lambda_bin = lambda_bin.reshape(nb_bin, r + 1)
-    
-    pyzM = log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin)
-    return -np.sum(ps_y * np.sum(p_z_ys * pyzM, axis = 0))
 
 ######################################################################
 # Ordinal likelihood functions
