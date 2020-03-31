@@ -7,9 +7,8 @@ Created on Thu Feb 13 09:43:11 2020
 
 import autograd.numpy as np
 from autograd import grad
-#import numpy as np
 
-from lik_functions import ord_lik_opt, binom_lik_opt
+from lik_functions import ord_loglik_j, binom_loglik_j
 
 def binom_gr_lik_opt(alpha, y, zM, k, ps_y, p_z_ys, nj):    
     r = zM.shape[1]
@@ -53,7 +52,7 @@ def binom_gr_lik_block(lambda_bin, y_bin, zM, k, ps_y, p_z_ys, nj_bin):
     
      
 def bin_autograd(lambda_bin_j, y_bin_j, zM, k, ps_y_new, p_z_ys_new, nj_bin_j):
-    grad_bin_lik = grad(binom_lik_opt)
+    grad_bin_lik = grad(binom_loglik_j)
     return grad_bin_lik(lambda_bin_j, y_bin_j, zM, k, ps_y_new, p_z_ys_new, nj_bin_j)
 
            
@@ -197,6 +196,6 @@ def ord_gr_lik_block(lambda_ord, y_oh, zM, k, ps_y, p_z_ys, nj_ord):
     return np.hstack([lambda0_grad, Lambda_grad]).flatten()
 
 
-def ord_autograd(lambda_ord_j, y_oh, zM, k, nj_ord_j, ps_y_new, p_z_ys_new):
-    grad_ord_lik = grad(ord_lik_opt)
-    return grad_ord_lik(lambda_ord_j, y_oh, zM, k, nj_ord_j, ps_y_new, p_z_ys_new)
+def ord_autograd(lambda_ord_j, y_oh, zM, k, ps_y_new, p_z_ys_new, nj_ord_j):
+    grad_ord_lik = grad(ord_loglik_j)
+    return grad_ord_lik(lambda_ord_j, y_oh, zM, k, ps_y_new, p_z_ys_new, nj_ord_j)

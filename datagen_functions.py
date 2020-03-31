@@ -13,7 +13,7 @@ from misc import misc
 from gllvm_block import gllvm
 
 import autograd.numpy as np
-from numpy.random import multivariate_normal, uniform, binomial
+from autograd.numpy.random import multivariate_normal, uniform, binomial
 import matplotlib.pyplot as plt
 
 numobs = 100
