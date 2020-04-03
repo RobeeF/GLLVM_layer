@@ -5,139 +5,145 @@ Created on Tue Feb 11 19:33:27 2020
 @author: Utilisateur
 """
 
-import numpy as np
+import autograd.numpy as np
+from autograd.numpy import newaxis as n_axis
 from scipy.special import binom
 import warnings
+from sklearn.preprocessing import OneHotEncoder
+
 warnings.filterwarnings('default')
- 
-def binom_lik(alpha, y, zM, k, ps_y, p_z_ys, nj): 
-    M = zM.shape[0]
-    numobs = len(y)
-    temp = np.zeros(numobs)
-    yg = np.repeat(y[np.newaxis], axis = 0, repeats = M)
-    coeff_binom = binom(nj, yg)
 
-    for i in range(k):
-        zi_star = np.hstack((np.ones((zM[:,:,i].shape[0], 1)), zM[:,:,i]))
-        eta = zi_star @ alpha[:,np.newaxis]
-        
-        den = nj * np.log(1 + np.exp(eta))
-        den = np.repeat(den, axis = 1, repeats = numobs)
-        
-        num = eta @ y[np.newaxis]  # To check
-
-        log_p_y_z = num - den + np.log(coeff_binom)
-        temp = temp + ps_y[:, i] * np.sum(p_z_ys[:, :, i] * log_p_y_z, axis = 0)
-      
-    return -np.sum(temp)
-
-def binom_lik_opt(alpha, y, zM, k, ps_y, p_z_ys, nj): # Passer plus de chose en argument
+def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j): 
+    ''' Compute log p(y_j | zM, s1 = k1) of the jth
+    
+    lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
+    y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    nj_bin_j (int): The number of possible values/maximum values of the jth binary/count variable
+    --------------------------------------------------------------
+    returns (ndarray): p(y_j | zM, s1 = k1)
+    '''
     M = zM.shape[0]
     r = zM.shape[1]
-    numobs = len(y)
-    yg = np.repeat(y[np.newaxis], axis = 0, repeats = M)
-    coeff_binom = binom(nj, yg).reshape(M, 1, numobs)
+    numobs = len(y_bin_j)
     
-    eta = np.transpose(zM, (0, 2, 1)) @ alpha[1:].reshape(1, r, 1)
-    eta = eta + alpha[0].reshape(1, 1, 1)# Add the constant
+    yg = np.repeat(y_bin_j[np.newaxis], axis = 0, repeats = M)
+    coeff_binom = binom(nj_bin_j, yg).reshape(M, 1, numobs)
     
-    den = nj * np.log(1 + np.exp(eta))
-    num = eta @ y[np.newaxis, np.newaxis]  # To check
+    eta = np.transpose(zM, (0, 2, 1)) @ lambda_bin_j[1:].reshape(1, r, 1)
+    eta = eta + lambda_bin_j[0].reshape(1, 1, 1) # Add the constant
+    
+    den = nj_bin_j * np.log(1 + np.exp(eta))
+    num = eta @ y_bin_j[np.newaxis, np.newaxis]  
     log_p_y_z = num - den + np.log(coeff_binom)
     
-    return -np.sum(ps_y * np.sum(p_z_ys * np.transpose(log_p_y_z, (0,2,1)), axis = 0))
+    return np.transpose(log_p_y_z, (0, 2, 1))
+
+def log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin):
+    ''' Compute sum_j log p(y_j | zM, s1 = k1) of all the binomial data with a for loop
+    
+    lambda_bin (nb_bin x (r + 1) ndarray): Coefficients of the binomial distributions in the GLLVM layer
+    y_bin (numobs x nb_bin ndarray): The subset containing only the binary/count variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    nj_bin (nb_bin x 1d-array): The number of possible values/maximum values of binary/count variables respectively
+    --------------------------------------------------------------
+    returns (ndarray): The sum_j p(y_j | zM, s1 = k1)
+    '''
+    log_py_zM = 0
+    nb_bin = len(nj_bin)
+    for j in range(nb_bin):
+        log_py_zM += log_py_zM_bin_j(lambda_bin[j], y_bin[:,j], zM, k, nj_bin[j])
+        
+    return log_py_zM
+
+def binom_loglik_j(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
+    ''' Compute the expected log-likelihood for each binomial variable y_j
+    
+    lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
+    y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    ps_y (numobs x k ndarray): p(s_i = k1 | y_i) for all k1 in [1,k] and i in [1,numobs]
+    p_z_ys (M x numobs x k ndarray): p(z_i | y_i, s_i = k) for all m in [1,M], k1 in [1,k] and i in [1,numobs]
+    nj_bin_j (int): The number of possible values/maximum values of the jth binary/count variable
+    --------------------------------------------------------------
+    returns (float): E_{zM, s | y, theta}(y_bin_j | zM, s1 = k1)
+    ''' 
+    log_pyzM_j = log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j)
+    return -np.sum(ps_y * np.sum(p_z_ys * log_pyzM_j, axis = 0))
 
 
 ######################################################################
 # Ordinal likelihood functions
 ######################################################################
 
-def categ_lik(theta, y, zM, k, o1, ps_y, p_z_ys):
-    #r = zM.shape[1]
-    M = zM.shape[0]
-    numobs = len(y)
-    thro = theta[:(o1 - 1)]
-    alphao = theta[o1 - 1:(len(theta) + 1)]
-    temp = np.zeros(numobs)
-    num = np.zeros((o1 - 1, M, numobs))
-    den = np.zeros((o1 - 1, M, numobs))
-    log_p_y_z = np.zeros((M, numobs))
-
-    for i in range(k):
-        for s in range(o1):
-            if (s < o1 - 1): 
-                exp_eta = np.repeat(np.exp(thro[s] - zM[:,:, i] @ alphao[...,np.newaxis]), axis = 1, \
-                                    repeats =  numobs)
-                num[s, :, :] = exp_eta
-                den[s, :, :] = (1 + exp_eta)
-                
-            yg_s = np.repeat((y == s + 1)[np.newaxis], axis = 0, repeats = M)  
-         
-            if (s == 0): # Pourquoi pas de passage au log ici ?
-                log_p_y_z = yg_s * np.log((num[s,: ,:]/den[s, :, :]))
-            if (s > 0 and s < o1 - 1): 
-                log_p_y_z = yg_s * np.log((num[s, :, :]/den[s, :, :] - num[s - 1, :, :]/den[s - 1, :, :]))
-            
-            if (s == o1 - 1): 
-                log_p_y_z = yg_s * np.log((1 - num[s - 1, :, :]/den[s - 1, :, :]))
+def log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord_j): # Prendre uniquement les coeff non 0 avec nj_ord
+    ''' Compute log p(y_j | zM, s1 = k1) of each ordinal variable 
     
-            temp = temp + ps_y[:, i] * np.sum(p_z_ys[:, :, i] * log_p_y_z, axis = 0)
-            
-    return - np.sum(temp)
-
-
-def categ_lik_opt(theta, y_oh, zM, k, o1, ps_y, p_z_ys):
+    lambda_ord_j ( (nj_ord_j + r - 1) 1darray): Coefficients of the ordinal distributions in the GLLVM layer
+    y_oh_j (numobs 1darray): The jth ordinal variable in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    nj_ord_j (int): The number of possible values values of the jth ordinal variable
+    --------------------------------------------------------------
+    returns (ndarray): The p(y_j | zM, s1 = k1) for the jth ordinal variable
+    '''    
     r = zM.shape[1]
     M = zM.shape[0]
-    thro = theta[:(o1 - 1)]
-    alphao = theta[o1 - 1:(len(theta) + 1)]
+    lambda0 = lambda_ord_j[:(nj_ord_j - 1)]
+    Lambda = lambda_ord_j[-r:]
  
-    broad_thro = thro.reshape(o1 - 1, 1, 1, 1)
-    eta = broad_thro - (np.transpose(zM, (0, 2, 1)) @ alphao.reshape(1, r, 1))[np.newaxis]
+    broad_lambda0 = lambda0.reshape((nj_ord_j - 1, 1, 1, 1))
+    eta = broad_lambda0 - (np.transpose(zM, (0, 2, 1)) @ Lambda.reshape((1, r, 1)))[np.newaxis]
     
     gamma = 1 / (1 + np.exp(-eta))
     gamma_prev = np.concatenate([np.zeros((1,M, k, 1)), gamma])
     gamma_next = np.concatenate([gamma, np.ones((1,M, k, 1))])
     pi = gamma_next - gamma_prev
     
-    yg = np.expand_dims(y_oh.T, 1)[..., np.newaxis, np.newaxis] 
+    yg = np.expand_dims(y_oh_j.T, 1)[..., np.newaxis, np.newaxis] 
     
     log_p_y_z = yg * np.log(np.expand_dims(pi, axis=2)) 
     
-    return -np.sum(ps_y * np.sum(np.expand_dims(p_z_ys[np.newaxis], axis = 4) * log_p_y_z, (0,1,4)))
+    return log_p_y_z.sum((0))
 
-   
-#########################################################################################
-# Test section 
-#########################################################################################
-'''
-j = 2
-binom_lik(alpha[j,:], y[:,j], zM, k, ps_y, p_z_ys, nj[j])
-binom_lik_opt(alpha[j,:], y[:,j], zM, k, ps_y, p_z_ys, nj[j])
+def log_py_zM_ord(lambda_ord, y_ord, zM, k, nj_ord): 
+    ''' Compute sum_j log p(y_j | zM, s1 = k1) of all the ordinal data with a for loop
+    
+    lambda_ord ( nb_ord x (nj_ord_j + r - 1) 1darray): Coefficients of the ordinal distributions in the GLLVM layer
+    y_ord (numobs x nb_bin ndarray): The subset containing only the binary/count variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    nj_ord (nb_ord x 1d-array): The number of possible values values of ordinal variables
+    --------------------------------------------------------------
+    returns (ndarray): The sum_j p(y_j | zM, s1 = k1) for ordinal variables
+    '''
+    
+    nb_ord = y_ord.shape[1]
+    enc = OneHotEncoder(categories='auto')
 
-j = 3
-theta = np.concatenate([thr[co, :nj[j] - 1], alphaor[co,:]])
-o1 = nj[j]
+    log_pyzM = 0
+    for j in range(nb_ord):
+        y_oh_j = enc.fit_transform(y_ord[:,j][..., n_axis]).toarray()
+        log_pyzM += log_py_zM_ord_j(lambda_ord[j], y_oh_j, zM, k, nj_ord[j])
+        
+    return log_pyzM
+        
 
-categ_lik(theta, y[:,j], zM, k, o1, ps_y, p_z_ys)
+def ord_loglik_j(lambda_ord_j, y_oh_j, zM, k, ps_y, p_z_ys, nj_ord_j):
+    ''' Compute the expected log-likelihood for each ordinal variable y_j
+    lambda_ord_j ( (nj_ord_j + r - 1) 1darray): Coefficients of the ordinal distributions in the GLLVM layer
+    y_oh_j (numobs 1darray): The subset containing only the ordinal variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    ps_y (numobs x k ndarray): p(s_i = k1 | y_i) for all k1 in [1,k] and i in [1,numobs]
+    p_z_ys (M x numobs x k ndarray): p(z_i | y_i, s_i = k) for all m in [1,M], k1 in [1,k] and i in [1,numobs]
+    nj_ord_j (int): The number of possible values of the jth ordinal variable
+    --------------------------------------------------------------
+    returns (float): E_{zM, s | y, theta}(y_ord_j | zM, s1 = k1)
+    ''' 
+    log_pyzM_j = log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord_j)
+    return -np.sum(ps_y * np.sum(np.expand_dims(p_z_ys, axis = 3) * log_pyzM_j, (0,3)))
 
-# Optimizer test
-from scipy.optimize import minimize
-
-x0 = np.array([1.3, 0.7, 0.8, 1.9, 1.2])
-res = minimize(binom_lik, alpha[j,:], args = (y[:,j], zM, k, ps_y, p_z_ys, nj[j]))
-res.x 
-               #, method='nelder-mead', options={'xatol': 1e-8, 'disp': True})
-help(minimize)
-
-# For ordinal
-res = minimize(categ_lik, theta, args = (y[:,j], zM, k, o1, ps_y, p_z_ys))
-res.x 
-
-# For opt ordinal 
-from sklearn.preprocessing import OneHotEncoder
-enc = OneHotEncoder()
-y_oh = enc.fit_transform(y[:,j][..., np.newaxis]).toarray() 
-categ_lik_opt(theta, y_oh, zM, k, o1, ps_y, p_z_ys)
-
-'''
