@@ -14,6 +14,7 @@ from lik_functions import ord_loglik_j, binom_loglik_j
 
 def bin_grad_j(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
     ''' Compute the gradient of the expected log-likelihood for each binomial variable y_j
+    
     lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
     y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
     zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
@@ -34,6 +35,7 @@ def bin_grad_j(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
 
 def ord_grad_j(lambda_ord_j, y_oh, zM, k, ps_y, p_z_ys, nj_ord_j):
     ''' Compute the gradient of the expected log-likelihood for each ordinal variable y_j
+    
     lambda_ord_j ( (nj_ord_j + r - 1) 1darray): Coefficients of the ordinal distributions in the GLLVM layer
     y_oh_j (numobs 1darray): The subset containing only the ordinal variables in the dataset
     zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture

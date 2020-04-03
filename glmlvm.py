@@ -27,8 +27,23 @@ import warnings
 warnings.filterwarnings("error")
 
 
-def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed): 
-    ''' Add maxstep '''
+def glmlvm(y, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed): 
+    ''' Fit a Generalized Linear Mixture of Latent Variables Model (GLMLVM)
+    
+    y (numobs x p ndarray): The observations containing categorical variables
+    r (int): The dimension of latent variables
+    k (int): The number of components of the latent Gaussian mixture
+    it (int): The maximum number of EM iterations of the algorithm
+    eps (float): If the likelihood increase by less than eps then the algorithm stops
+    maxstep (int): The maximum number of optimisation step for each variable
+    var_distrib (p 1darray): An array containing the types of the variables in y 
+    nj (p 1darray): For binary/count data: The maximum values that the variable can take. 
+                    For ordinal data: the number of different existing categories for each variable
+    M (int): The number of MC points to compute 
+    seed (int): The random state seed to set (Only for numpy generated data for the moment)
+    ------------------------------------------------------------------------------------------------
+    returns (dict): The predicted classes and the likelihood through the EM steps
+    '''
 
     prev_lik = - 100000
     tol = 0.01
@@ -40,21 +55,21 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
     lambda_ord = deepcopy(init['lambda_ord'])
     w = deepcopy(init['w'])
     
+    numobs = len(y)
     likelihood = []
     hh = 0
     ratio = 1000
+    classes = np.zeros((numobs))
     np.random.seed = seed
         
     # Dispatch variables between categories
     y_bin = y[:, np.logical_or(var_distrib == 'bernoulli',var_distrib == 'binomial')]
     nj_bin = nj[np.logical_or(var_distrib == 'bernoulli',var_distrib == 'binomial')]
     nb_bin = len(nj_bin)
-    
+        
     y_ord = y[:, var_distrib == 'ordinal']    
     nj_ord = nj[var_distrib == 'ordinal']
     nb_ord = len(nj_ord)
-    max_nj_ord = max(nj_ord) if nb_ord > 0 else 0
-
     
     assert nb_ord + nb_bin > 0 
                      
@@ -62,29 +77,34 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         hh = hh + 1
         log_py_zM = np.zeros((M, numobs, k))
 
+        #=================================================
         # Simulate pseudo-observations
+        #=================================================
+        
         zM = multivariate_normal(size = (M, 1), mean = mu.flatten(order = 'F'), cov = block_diag(*sigma)) 
         zM = t(zM.reshape(M, k, r, order = 'F'), (0, 2, 1))
         
-        ###### Compute the p(y| zM) for all variable categories ########
+        #==================================================
+        # Compute the p(y| zM) for all variable categories
+        #==================================================
         
-        # First the Binomial data
-        if nb_bin:
-            log_py_zM = log_py_zM + log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin) # shape = (M,k,numobs)
+        if nb_bin: # First the Count/Binomial variables
+            log_py_zM = log_py_zM + log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin) 
                 
-        # Then the categorical variables        
-        if nb_ord:
+        if nb_ord: # Then the ordinal variables 
             log_py_zM = log_py_zM + log_py_zM_ord(lambda_ord, y_ord, zM, k, nj_ord)[:,:,:,0] 
         
         py_zM = np.exp(log_py_zM)
         py_zM = np.where(py_zM == 0, 1E-50, py_zM)
 
-        
         #####################################################################################
-        ############################ E step #################################################
+        ################################# E step ############################################
         #####################################################################################
         
-        # Resample zM conditionally on y 
+        #======================================================
+        # Resample zM conditionally on y and s
+        #======================================================
+        
         qM = py_zM / np.sum(py_zM, axis = 0, keepdims = True)
         new_zM = np.zeros((M,numobs, r, k))
         
@@ -99,6 +119,11 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
             new_zM[:,:,:,i] = np.take(zM[:,:, i], idx.T, axis=0)
         
         del(u)
+        
+        
+        #=======================================================
+        # Compute conditional probabilities used in the appendix
+        #=======================================================
         
         pz_s = np.zeros((M, 1, k))
                 
@@ -125,7 +150,7 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         p_y = py_s @ w
         
         # Compute E_{y,s}(z) and E_{y,s}(zTz)
-        E_z_sy = t(np.mean(new_zM, axis = 0), (0, 2, 1)) # Remove transpose later on
+        E_z_sy = t(np.mean(new_zM, axis = 0), (0, 2, 1)) 
         zTz = (t(new_zM[...,n_axis], (0, 1, 3, 2, 4)) @ \
                    t(new_zM[...,n_axis], (0, 1, 3, 4, 2)))
         E_zz_sy = np.mean(zTz, axis = 0)
@@ -134,8 +159,11 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         #Ez_y = (ps_y[...,n_axis] * E_z_sy).sum(1)
                 
         del(new_zM)
-                
-        # Computing Gaussian Parameters
+        
+        #=======================================================
+        # Compute Gaussian Parameters
+        #=======================================================
+
         w = np.mean(ps_y, axis = 0)
         den = ps_y.sum(0, keepdims = True).T[..., n_axis]
         den = np.where(den < 1E-14, 1E-14, den)
@@ -167,34 +195,54 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         
         # We optimize each column separately as it is faster than all column jointly 
         # (and more relevant with the independence hypothesis)
+        
+        #=======================================================
+        # Binomial link parameters
+        #=======================================================        
+        
         for j in range(nb_bin):
-            # Add initial guess and lim iterations
-            opt = minimize(binom_loglik_j, lambda_bin[j,:], args = (y_bin[:,j], zM, k, ps_y, p_z_ys, nj_bin[j]), 
-                           tol = tol, method='BFGS', jac = bin_grad_j, options = {'maxiter': maxstep})
-                
+            if j < r - 1: # Constrained columns
+                nb_constraints = r - j - 1
+                lcs = np.hstack([np.zeros((nb_constraints, j + 2)), np.eye(nb_constraints)])
+                linear_constraint = LinearConstraint(lcs, np.full(nb_constraints, 0), \
+                                                 np.full(nb_constraints, 0), keep_feasible = True)
+            
+                opt = minimize(binom_loglik_j, lambda_bin[j] , args = (y_bin[:,j], zM, k, ps_y, p_z_ys, nj_bin[j]), 
+                               tol = tol, method='trust-constr',  jac = bin_grad_j, \
+                               constraints = linear_constraint, hess = '2-point', options = {'maxiter': maxstep})
+                        
+            else: # Unconstrained columns
+                opt = minimize(binom_loglik_j, lambda_bin[j], args = (y_bin[:,j], zM, k, ps_y, p_z_ys, nj_bin[j]), 
+                               tol = tol, method='BFGS', jac = bin_grad_j, options = {'maxiter': maxstep})
+                    
             if not(opt.success):
                 raise RuntimeError('Binomial optimization failed')
-                    
+                
             lambda_bin[j, :] = deepcopy(opt.x)  
 
         # Last identifiability part
         if nb_bin > 0:
-            lambda_bin = np.tril(lambda_bin, k = 1)
+            #lambda_bin = np.tril(lambda_bin, k = 1)
             lambda_bin[:,1:] = lambda_bin[:,1:] @ sigma_z[0] 
-       
+  
+        
+        #=======================================================
+        # Ordinal link parameters
+        #=======================================================    
         
         for j in range(nb_ord):
             enc = OneHotEncoder(categories='auto')
             y_oh = enc.fit_transform(y_ord[:,j][..., n_axis]).toarray()                
             
             # Define the constraints such that the threshold coefficients are ordered
-            nb_constraints = nj_ord[j] - 2
-            np_params = lambda_ord[j].shape[0]
+            nb_constraints = nj_ord[j] - 2 
+            nb_params = nj_ord[j] + r - 1
+            
             lcs = np.full(nb_constraints, -1)
             lcs = np.diag(lcs, 1)
             np.fill_diagonal(lcs, 1)
             
-            lcs = np.hstack([lcs[:nb_constraints, :], np.zeros([nb_constraints, np_params - (nb_constraints + 1)])])
+            lcs = np.hstack([lcs[:nb_constraints, :], np.zeros([nb_constraints, nb_params - (nb_constraints + 1)])])
             
             linear_constraint = LinearConstraint(lcs, np.full(nb_constraints, -np.inf), \
                                                  np.full(nb_constraints, 0), keep_feasible = True)
@@ -206,13 +254,19 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
                                constraints = linear_constraint, hess = '2-point', options = {'maxiter': maxstep})
             
             if not(opt.success):
-                raise RuntimeError('Categorical optimization failed')
                 print(opt)
-            lambda_ord[j] = deepcopy(opt.x) 
+                raise RuntimeError('Ordinal optimization failed')
+                     
+            # Ensure identifiability for Lambda_j
+            new_lambda_ord_j = (opt.x[-r: ].reshape(1, r) @ sigma_z[0]).flatten() 
+            new_lambda_ord_j = np.hstack([deepcopy(opt.x[: nj_ord[j] - 1]), new_lambda_ord_j]) # Complete with lambda_0 coefficients
+            lambda_ord[j] = new_lambda_ord_j
             
-        if nb_ord > 0:
-            lambda_ord[:, max_nj_ord - 1 :] = lambda_ord[:, max_nj_ord - 1 :] @ sigma_z[0]
-              
+         
+        ###########################################################################
+        ################## Clustering parameters updating #########################
+        ###########################################################################
+          
         new_lik = np.sum(np.log(p_y))
         likelihood.append(new_lik)
         ratio = (new_lik - prev_lik)/abs(prev_lik)
@@ -229,7 +283,5 @@ def gllvm(y, numobs, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         prev_lik = new_lik
 
 
-    out = dict(lambda_bin = lambda_bin, lambda_ord = lambda_ord, \
-                w = w, mu = mu, sigma = sigma, likelihood = likelihood, \
-                classes = classes)
+    out = dict(likelihood = likelihood, classes = classes)
     return(out)

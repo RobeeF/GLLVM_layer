@@ -11,7 +11,7 @@ import os
 os.chdir('C:/Users/rfuchs/Documents/GitHub/GLLVM_layer')
 
 from init_params import init_params, init_cv
-from misc import misc
+from utils import misc
 from gllvm_block import gllvm
 from datagen_functions import gen_mvdata, gen_mv_z, gen_z, gen_data
 
@@ -53,7 +53,7 @@ for i in range(nb_trials):
     
     #random_init = init_params(r, nj_bin, nj_ord, k, init_seed)
     random_init = init_cv(y, var_distrib, r, nj_bin, nj_ord, k, seed)
-    out = gllvm(y, numobs, r, k, it, random_init, eps, maxstep, var_distrib, nj, M, seed)
+    out = gllvm(y, r, k, it, random_init, eps, maxstep, var_distrib, nj, M, seed)
     
     miscs[i] = misc(labels, out['classes'])
     print(miscs[i])

@@ -14,7 +14,8 @@ from sklearn.preprocessing import OneHotEncoder
 warnings.filterwarnings('default')
 
 def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j): 
-    ''' Compute sum_j log p(y_j | zM, s1 = k1) of the jth
+    ''' Compute log p(y_j | zM, s1 = k1) of the jth
+    
     lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
     y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
     zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
@@ -39,8 +40,9 @@ def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j):
     
     return np.transpose(log_p_y_z, (0, 2, 1))
 
-def log_py_zM_bin_seq(lambda_bin, y_bin, zM, k, nj_bin):
+def log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin):
     ''' Compute sum_j log p(y_j | zM, s1 = k1) of all the binomial data with a for loop
+    
     lambda_bin (nb_bin x (r + 1) ndarray): Coefficients of the binomial distributions in the GLLVM layer
     y_bin (numobs x nb_bin ndarray): The subset containing only the binary/count variables in the dataset
     zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
@@ -58,6 +60,7 @@ def log_py_zM_bin_seq(lambda_bin, y_bin, zM, k, nj_bin):
 
 def binom_loglik_j(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
     ''' Compute the expected log-likelihood for each binomial variable y_j
+    
     lambda_bin_j ( (r + 1) 1darray): Coefficients of the binomial distributions in the GLLVM layer
     y_bin_j (numobs 1darray): The subset containing only the binary/count variables in the dataset
     zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
@@ -78,6 +81,7 @@ def binom_loglik_j(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
 
 def log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord_j): # Prendre uniquement les coeff non 0 avec nj_ord
     ''' Compute log p(y_j | zM, s1 = k1) of each ordinal variable 
+    
     lambda_ord_j ( (nj_ord_j + r - 1) 1darray): Coefficients of the ordinal distributions in the GLLVM layer
     y_oh_j (numobs 1darray): The jth ordinal variable in the dataset
     zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
@@ -89,7 +93,7 @@ def log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord_j): # Prendre uniquement
     r = zM.shape[1]
     M = zM.shape[0]
     lambda0 = lambda_ord_j[:(nj_ord_j - 1)]
-    Lambda = lambda_ord_j[(nj_ord_j - 1):(len(lambda_ord_j) + 1)]
+    Lambda = lambda_ord_j[-r:]
  
     broad_lambda0 = lambda0.reshape((nj_ord_j - 1, 1, 1, 1))
     eta = broad_lambda0 - (np.transpose(zM, (0, 2, 1)) @ Lambda.reshape((1, r, 1)))[np.newaxis]
@@ -107,6 +111,7 @@ def log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord_j): # Prendre uniquement
 
 def log_py_zM_ord(lambda_ord, y_ord, zM, k, nj_ord): 
     ''' Compute sum_j log p(y_j | zM, s1 = k1) of all the ordinal data with a for loop
+    
     lambda_ord ( nb_ord x (nj_ord_j + r - 1) 1darray): Coefficients of the ordinal distributions in the GLLVM layer
     y_ord (numobs x nb_bin ndarray): The subset containing only the binary/count variables in the dataset
     zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
@@ -118,13 +123,11 @@ def log_py_zM_ord(lambda_ord, y_ord, zM, k, nj_ord):
     
     nb_ord = y_ord.shape[1]
     enc = OneHotEncoder(categories='auto')
-    r = zM.shape[1]
 
     log_pyzM = 0
     for j in range(nb_ord):
-        lambda_ord_j = np.concatenate([lambda_ord[j, :(nj_ord[j] - 1)], lambda_ord[j, -r:]])
         y_oh_j = enc.fit_transform(y_ord[:,j][..., n_axis]).toarray()
-        log_pyzM += log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord[j])
+        log_pyzM += log_py_zM_ord_j(lambda_ord[j], y_oh_j, zM, k, nj_ord[j])
         
     return log_pyzM
         

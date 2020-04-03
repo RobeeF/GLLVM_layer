@@ -8,18 +8,22 @@ Created on Wed Feb  5 17:45:45 2020
 import os
 
 os.chdir('C:/Users/rfuchs/Documents/GitHub/GLLVM_layer')
-from init_params import init_params, init_cv
-from misc import misc
-from gllvm_block import gllvm
 
 import autograd.numpy as np
 from autograd.numpy.random import multivariate_normal, uniform, binomial
-import matplotlib.pyplot as plt
 
-numobs = 100
-seed = None
+####################################################################
+############# Univariate asta data generation ######################
+####################################################################
 
 def gen_z(numobs, seed):
+    ''' Generate the latent variables to reproduce the asta paper results
+    
+    numobs (int): The number of observations desired
+    seed (int): The random state seed 
+    ----------------------------------------------------------------------
+    returns (numobs 1darray): Univariate latent variable used in the asta paper example
+    '''
     np.random.seed = seed
 
     true_w = [0.3, 0.4, 0.3]
@@ -42,6 +46,14 @@ def gen_z(numobs, seed):
 
 
 def gen_data(z, seed = None):
+    ''' Generate a simulated dataset from univariate z
+    
+    z (numobs 1darray): Univariate latent variable
+    seed (int): The random state seed 
+    ----------------------------------------------------------------------
+    returns (numobs x 4 ndarray): Synthetic dataset used in the asta paper example
+    '''
+    
     np.random.seed = seed
 
     numobs = len(z)  
@@ -52,7 +64,10 @@ def gen_data(z, seed = None):
     szo=5
     y = np.zeros(shape = (numobs, p))
     
-    ######## gen binary #################
+    #===================================
+    # Generate binary data
+    #===================================
+    
     alpha_zero = np.repeat([[0.50], [0.60]], axis = 1, repeats = numobs)
     #alphabin = np.repeat([[2], [2.50]], axis = 1, repeats = numobs)
     alphabin = np.array([[2], [2.50]])
@@ -67,8 +82,10 @@ def gen_data(z, seed = None):
     y[:,0:p1]=x
   
   
-    ######## gen count #################
-  
+    #===================================
+    # Generate count data
+    #===================================  
+    
     alpha_zcount = 0.70
     alphacount = [2.00]
   
@@ -78,7 +95,10 @@ def gen_data(z, seed = None):
     for l in range(numobs):
         y[l,p1:(p1+p2)] = binomial(n = 10, p = probcount[l], size = 1) # p1 + p2 ?
   
-    ########gen ordinal#############
+    #===================================
+    # Generate ordinal data
+    #===================================
+
     probor = np.zeros(shape = (numobs,szo,p3))
     thr = [-1.00, -0.30, 0.40,  0.90]
   
@@ -107,16 +127,29 @@ def gen_data(z, seed = None):
 
 
 ####################################################################
-# Multivariate data generation
+############## Multivariate data generation ########################
 ####################################################################
+
 def gen_mv_z(numobs, r, init, seed):
+    ''' Generate multivariate latent variable z from the initialisation parameters
+    given in init.
+    
+    numobs (int): The number of observations desired
+    r (int): The dimension of the latent variables
+    init (dict): The initialisation parameters
+    seed (int): The random state seed 
+    ----------------------------------------------------------------------
+    returns (numobs x r ndarray): Multivariate latent variables
+    '''
+    
     np.random.seed = seed
 
     k  = 3
 
     all_z = np.zeros((numobs,r,k))
     for i in range(k): # To change with np.block_diag when ready
-        all_z[:,:,i] = multivariate_normal(size = numobs, mean = init['mu'][i].flatten(), cov = init['sigma'][i]) 
+        all_z[:,:,i] = multivariate_normal(size = numobs, mean = init['mu'][i].flatten(),\
+                                           cov = init['sigma'][i]) 
 
     z = np.zeros((numobs, r))
     cases = uniform(0, 1, numobs)    
@@ -132,6 +165,15 @@ def gen_mv_z(numobs, r, init, seed):
     return z, labels  
 
 def gen_mvdata(z, init, seed = None):
+    ''' Generate a simulated dataset from multivariate z
+    
+    z (numobs x r ndarray): Univariate latent variable
+    init (dict): The initialisation parameters
+    seed (int): The random state seed 
+    ----------------------------------------------------------------------
+    returns (numobs x 4 ndarray): A Synthetic dataset with 4 features
+    '''
+    
     np.random.seed = seed
 
     numobs = len(z)  
@@ -144,7 +186,10 @@ def gen_mvdata(z, init, seed = None):
     
     r = init['lambda_bin'].shape[1] - 1
     
-    ######## gen binary and count #################
+    #==============================================
+    # Generate binary and count variables
+    #==============================================
+    
     pred = init['lambda_bin'] @ np.vstack([np.ones((1, numobs)), z.T]) 
     probbin = np.exp(pred) / (1 + np.exp(pred))
     probbin = probbin.T
@@ -157,7 +202,10 @@ def gen_mvdata(z, init, seed = None):
     for l in range(numobs):
         y[l,p1:(p1+p2)] = binomial(n = 10, p = probbin[l,p1:(p1 + p2)], size = 1) # p1 + p2 ?
 
-    ########gen ordinal#############
+    #==============================================
+    # Generate ordinal variable
+    #==============================================
+
     probor = np.zeros(shape = (numobs, max_nj_ord, p3))
       
     lambda0 = init['lambda_ord'][:, :(max_nj_ord - 1)] # Shape (nb_ord, max_nj_ord)
