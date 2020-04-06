@@ -5,15 +5,21 @@ Created on Wed Mar  4 19:26:07 2020
 @author: Utilisateur
 """
 
-import autograd.numpy as np
+from time import time
+from scipy import linalg
 from copy import deepcopy
 from itertools import permutations
+from sklearn.metrics import precision_score
 from sklearn.preprocessing import OneHotEncoder
-import pandas as pd
-import matplotlib.pyplot as plt
+
 import itertools
+import pandas as pd
 import matplotlib as mpl
-from scipy import linalg
+import autograd.numpy as np
+import matplotlib.pyplot as plt
+
+from glmlvm import glmlvm
+from init_params import init_params, dim_reduce_init
 
 def sample_MC_points(zM, p_z_ys, nb_points):
     ''' Resample nb_points from zM with the highest p_z_ys probability
@@ -214,4 +220,60 @@ def compute_nj(y, var_distrib):
     nj_ord = np.array(nj_ord)
 
     return nj, nj_bin, nj_ord
+
+
+def performance_testing(y, labels, k, init_method, var_distrib, nj, r_max = 5, seed = None):
+    ''' Utility used to mesure performance of the algorithm on a given dataset.
+    For time measures initialisation times are here neglected
     
+    y (numobs x p ndarray): The original data
+    labels (numobs 1darray): The one-hot encoded labels 
+    var_distrib (p 1darray): The type of the variables in the data
+    -------------------------------------------------------------------    
+    returns (DataFrame): Performance measures 
+    '''
+    
+    results = pd.DataFrame(columns = ['it_id', 'r', 'run_time', 'nb_iterations', 'micro', 'macro'])
+    nb_trials = 30
+    r_list = range(1, r_max + 1)
+    
+    if seed != None:
+        seed_list = [seed + i for i in range(nb_trials)]
+    else:
+        seed_list = [None for i in range(nb_trials)]
+
+    if type(y) == pd.core.frame.DataFrame:
+        y_pd = deepcopy(y)
+        y = y.values
+        
+    _, nj_bin, nj_ord = compute_nj(y_pd, var_distrib)
+
+    for r in r_list:
+        print(r)            
+        M = r * 5
+        for i in range(nb_trials):
+            start = time()
+            
+            if init_method == 'prince':
+                init = dim_reduce_init(y_pd, k, r, nj, var_distrib, dim_red_method = 'prince',\
+                                       seed = seed_list[i])
+            else:
+                init = init_params(r, nj_bin, nj_ord, k, init_seed = seed_list[i])
+
+            try:
+                out = glmlvm(y, r, k, init, var_distrib, nj, M, seed = seed_list[i])
+                end = time()
+                
+                # Compute precision
+                m, pred = misc(labels, out['classes'], True) 
+                macro = precision_score(labels, pred, average = 'macro')
+                micro = precision_score(labels, pred, average = 'micro') # same thing as 1 - m ...
+
+                nb_iterations = len(out['likelihood']) - 1
+                
+                results = results.append({'it_id': i + 1, 'r': r , 'run_time': end -start, \
+                            'nb_iterations': nb_iterations, 'micro': micro, 'macro': macro}, ignore_index=True)
+            except:
+                results = results.append({'it_id': i + 1, 'r': r , 'run_time': np.nan, \
+                            'nb_iterations': np.nan, 'micro': np.nan, 'macro': np.nan}, ignore_index=True)
+    return results    

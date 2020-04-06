@@ -28,7 +28,8 @@ from copy import deepcopy
 from glmlvm import glmlvm
 from init_params import init_params, dim_reduce_init
 from utils import misc, gen_categ_as_bin_dataset, \
-        ordinal_encoding, plot_gmm_init, compute_nj
+        ordinal_encoding, plot_gmm_init, compute_nj, \
+            performance_testing
 
 warnings.filterwarnings("error") # Attention..!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -110,6 +111,8 @@ sns.scatterplot(
     alpha=0.3
 )
 
+plt.show()
+
 mca.eigenvalues_
 mca.explained_inertia_ # A little better than for Portuguese banks
 
@@ -137,7 +140,6 @@ y_np = y.values
 
 # Launching the algorithm
 r = 3
-numobs = len(y)
 M = r * 5
 k = 2
 
@@ -149,16 +151,23 @@ it = 30
 maxstep = 100
 
 # Prince init
-prince_init = dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = None)
-out = glmlvm(y_np, r, k, it, prince_init, eps, maxstep, var_distrib, nj, M, seed)
+prince_init = dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = None)       
+out = glmlvm(y, r, k, prince_init, var_distrib, nj, M, it, eps, maxstep, seed)
 m, pred = misc(labels_oh, out['classes'], True) 
 print(m)
 print(confusion_matrix(labels_oh, pred))
 
 # Random init
 random_init = init_params(r, nj_bin, nj_ord, k, None)
-out = glmlvm(y_np, r, k, it, random_init, eps, maxstep, var_distrib, nj, M, seed)
+out = glmlvm(y, r, k, random_init, var_distrib, nj, M, it, eps, maxstep, seed)
 m, pred = misc(labels_oh, out['classes'], True) 
 print(m)
 print(confusion_matrix(labels_oh, pred))
 
+
+#=============================================
+# Performance measure
+#=============================================
+
+init = prince_init
+performance_testing(y_np, labels, r, k, init, var_distrib, nj, seed = None)

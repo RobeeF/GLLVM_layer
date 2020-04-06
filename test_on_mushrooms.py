@@ -27,7 +27,7 @@ from copy import deepcopy
 from glmlvm import glmlvm
 from init_params import init_params, dim_reduce_init
 from utils import misc, gen_categ_as_bin_dataset, \
-        ordinal_encoding, plot_gmm_init, compute_nj
+        ordinal_encoding, plot_gmm_init, compute_nj, performance_testing
 
 warnings.filterwarnings("error") # Attention..!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -112,6 +112,7 @@ sns.scatterplot(
     legend="full",
     alpha=0.3
 )
+plt.show()
 
 mca.eigenvalues_
 print('Explained inertia is', mca.explained_inertia_) # Far better than the other ones
@@ -158,8 +159,42 @@ print(confusion_matrix(labels_oh, pred))
 
 # Random init
 random_init = init_params(r, nj_bin, nj_ord, k, None)
-out = glmlvm(y_np, r, k, it, random_init, eps, maxstep, var_distrib, nj, M, seed)
+out = glmlvm(y_np, r, k, random_init, var_distrib, nj, M, it, eps, maxstep, seed)
 m, pred = misc(labels_oh, out['classes'], True) 
 print(m)
 print(confusion_matrix(labels_oh, pred))
 
+#=============================================
+# Performance measure
+#=============================================
+
+#res_prince = performance_testing(y, labels_oh, k, 'prince', var_distrib, nj, r_max = 7, seed = None)
+res_prince = pd.read_csv('mushrooms/prince_30runs.csv')
+
+# Analysis of Prince init
+res_prince[['r', 'micro', 'macro']].boxplot(by = 'r', figsize = (20, 10))
+res_prince[['r','run_time']].boxplot(by = 'r', figsize = (20, 10))
+res_prince[['r','nb_iterations']].boxplot(by = 'r', figsize = (20, 10))
+
+# Plot the percentage of launches that failed
+res_prince = res_prince.set_index('r')
+NaNs_per_r = res_prince.isna().astype(int).groupby('r').mean()
+plt.plot('r', 'macro', data=NaNs_per_r.reset_index()) # No fails either
+
+res_prince.to_csv('mushrooms/prince_30runs.csv')
+
+
+# Analysis of random init
+#res_random = performance_testing(y, labels_oh, k, 'random', var_distrib, nj, r_max = 7, seed = None)
+res_random = pd.read_csv('mushrooms/random_30runs.csv')
+
+res_random[['r', 'micro', 'macro']].boxplot(by = 'r', figsize = (20, 10))
+res_random[['r','run_time']].boxplot(by = 'r', figsize = (20, 10))
+res_random[['r','nb_iterations']].boxplot(by = 'r', figsize = (20, 10))
+
+# Plot the percentage of launches that failed
+res_random = res_random.set_index('r')
+NaNs_per_r = res_random.isna().astype(int).groupby('r').mean()
+plt.plot('r', 'macro', data=NaNs_per_r.reset_index()) # No fails either
+
+res_random.to_csv('mushrooms/random_30runs.csv')

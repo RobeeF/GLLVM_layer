@@ -26,8 +26,7 @@ from scipy.optimize import LinearConstraint
 import warnings
 warnings.filterwarnings("error")
 
-
-def glmlvm(y, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed): 
+def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 100, seed = None): 
     ''' Fit a Generalized Linear Mixture of Latent Variables Model (GLMLVM)
     
     y (numobs x p ndarray): The observations containing categorical variables
@@ -222,7 +221,6 @@ def glmlvm(y, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
 
         # Last identifiability part
         if nb_bin > 0:
-            #lambda_bin = np.tril(lambda_bin, k = 1)
             lambda_bin[:,1:] = lambda_bin[:,1:] @ sigma_z[0] 
   
         
@@ -254,7 +252,6 @@ def glmlvm(y, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
                                constraints = linear_constraint, hess = '2-point', options = {'maxiter': maxstep})
             
             if not(opt.success):
-                print(opt)
                 raise RuntimeError('Ordinal optimization failed')
                      
             # Ensure identifiability for Lambda_j
@@ -273,8 +270,8 @@ def glmlvm(y, r, k, it, init, eps, maxstep, var_distrib, nj, M, seed):
         
         if (hh < 3): 
             ratio = 2 * eps
-        print(hh)
-        print(likelihood)
+        #print(hh)
+        #print(likelihood)
         
         # Refresh the classes only if they provide a better explanation of the data
         if prev_lik > new_lik:
