@@ -5,21 +5,25 @@ Created on Wed Mar  4 19:26:07 2020
 @author: Utilisateur
 """
 
+
+import sys
+
 from time import time
 from scipy import linalg
 from copy import deepcopy
 from itertools import permutations
 from sklearn.metrics import precision_score
 from sklearn.preprocessing import OneHotEncoder
+from init_params import init_params, dim_reduce_init
+
+
+#from glmlvm import glmlvm
 
 import itertools
 import pandas as pd
 import matplotlib as mpl
 import autograd.numpy as np
 import matplotlib.pyplot as plt
-
-from glmlvm import glmlvm
-from init_params import init_params, dim_reduce_init
 
 def sample_MC_points(zM, p_z_ys, nb_points):
     ''' Resample nb_points from zM with the highest p_z_ys probability
@@ -101,7 +105,9 @@ def misc(true, pred, return_relabeled = False):
     else:
         return best_misc
         
-
+def cluster_purity(cm):
+    ''' Compute the cluster purity index mentioned in Chen and He (2016)'''
+    return np.sum(np.amax(cm, axis=0)) / np.sum(cm) 
 
 def gen_categ_as_bin_dataset(y, var_distrib):
     ''' Convert the categorical variables in the dataset to binary variables
@@ -277,3 +283,23 @@ def performance_testing(y, labels, k, init_method, var_distrib, nj, r_max = 5, s
                 results = results.append({'it_id': i + 1, 'r': r , 'run_time': np.nan, \
                             'nb_iterations': np.nan, 'micro': np.nan, 'macro': np.nan}, ignore_index=True)
     return results    
+
+#=============================================================================
+# Numeric stability
+#=============================================================================
+
+def log_1plusexp(eta_):
+    ''' Numerically stable version np.log(1 + np.exp(eta)) '''
+
+    eta_original = deepcopy(eta_)
+    eta_ = np.where(eta_ >= np.log(sys.float_info.max), np.log(sys.float_info.max) - 1, eta_) 
+    return np.where(eta_ >= 50, eta_original, np.log1p(np.exp(eta_)))
+        
+def expit(eta_):
+    ''' Numerically stable version of 1/(1 + exp(eta)) '''
+    
+    max_value_handled = np.log(np.sqrt(sys.float_info.max) - 1)
+    eta_ = np.where(eta_ <= - max_value_handled + 3, - max_value_handled + 3, eta_) 
+    eta_ = np.where(eta_ >= max_value_handled - 3, np.log(sys.float_info.max) - 3, eta_) 
+
+    return np.where(eta_ <= -50, np.exp(eta_), 1/(1 + np.exp(-eta_)))

@@ -8,11 +8,6 @@ Created on Mon Feb 10 16:55:44 2020
 import os
 os.chdir('C:/Users/rfuchs/Documents/GitHub/GLLVM_layer')
 
-import autograd.numpy as np
-from autograd.numpy.random import uniform
-from autograd.numpy import newaxis as n_axis
-from autograd.numpy import transpose as t
-from autograd.numpy.linalg import cholesky, pinv
 
 from sklearn import manifold
 from sklearn.mixture import GaussianMixture
@@ -22,11 +17,14 @@ import umap
 import prince
 import pandas as pd
 
-
-from glmlvm import glmlvm
-
 # Dirty local hard copy of the Github bevel package
 from bevel.linear_ordinal_regression import  OrderedLogit 
+
+import autograd.numpy as np
+from autograd.numpy.random import uniform
+from autograd.numpy import newaxis as n_axis
+from autograd.numpy import transpose as t
+from autograd.numpy.linalg import cholesky, pinv
 
 
 ####################################################################################
@@ -104,45 +102,6 @@ def init_params(r, nj_bin, nj_ord, k, init_seed):
     return(init)
 
 
-def init_cv(y, var_distrib, r, nj_bin, nj_ord, k, seed):
-    ''' Test 20 different inits for a few iterations and returns the best one
-    
-    y (numobs x p ndarray): The observations containing categorical variables
-    var_distrib (p 1darray): An array containing the types of the variables in y 
-    r (int): The dimension of latent variables
-    nj_bin (nb_bin 1darray): For binary/count data: The maximum values that the variable can take. 
-    nj_ord (nb_ord 1darray): For ordinal data: the number of different existing categories for each variable
-    k (int): The number of components of the latent Gaussian mixture
-    seed (int): The random state seed to set (Only for numpy generated data for the moment)
-    --------------------------------------------------------------------------------------------
-    returns (dict): The initialisation parameters that gave the best likelihood
-    '''
-      
-    nb_init_tested = 10
-    M = 4 * r
-    best_lik = -1000000
-    best_init = {}
-    nb_it = 2
-    maxstep = 100
-    eps = 1E-5
-    nj = np.concatenate([nj_bin, nj_ord])
-
-    for i in range(nb_init_tested):
-        init = init_params(r, nj_bin, nj_ord, k, None)
-        try:
-            out = glmlvm(y, r, k, nb_it, init, eps, maxstep, var_distrib, nj, M, seed)
-        except:
-            continue
-
-        lik = out['likelihood'][-1]
-    
-        if (best_lik < lik):
-            best_lik = lik
-            best_init = init
-    
-    return(best_init)
-
-
 ####################################################################################
 ########## MCA / T-SNE / UMAP + GMM + Logistic Regressions initialisation ##########
 ####################################################################################
@@ -206,8 +165,9 @@ def dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = 
         if type(y) != pd.core.frame.DataFrame:
             raise TypeError('y should be a dataframe for prince')
         
+        # Check input False due to the new pandas update
         mca = prince.MCA(n_components = r, n_iter=3, copy=True, \
-                         check_input=True, engine='auto', random_state=42)
+                         check_input=False, engine='auto', random_state=42)
         mca = mca.fit(y)
         z_emb = mca.row_coordinates(y).values.astype(float)
         
@@ -254,6 +214,7 @@ def dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = 
     init['mu']  = mu  - Ezz_T        
     
     init['w'] = w
+    init['preds'] = gmm.predict(z_emb)
          
     #=======================================================
     # Determining the coefficients of the GLLVM layer

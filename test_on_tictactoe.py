@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Mar 24 17:37:43 2020
+Created on Fri Jun  5 17:47:04 2020
+
+@author: rfuchs
+"""
+
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Apr  3 11:33:34 2020
 
 @author: rfuchs
 """
@@ -31,9 +38,8 @@ from utils import misc, gen_categ_as_bin_dataset, \
         
 warnings.filterwarnings("error") # Attention..!!!!!!!!!!!!!!!!!!!!!!!!
 
-
 ###############################################################################################
-#################            Breast cancer vizualisation          #############################
+##############        Clustering on the Tic Tac Toe dataset (UCI)          ######################
 ###############################################################################################
 
 #===========================================#
@@ -41,51 +47,29 @@ warnings.filterwarnings("error") # Attention..!!!!!!!!!!!!!!!!!!!!!!!!
 #===========================================#
 os.chdir('C:/Users/rfuchs/Documents/These/Stats/mixed_dgmm/datasets')
 
-br = pd.read_csv('breast_cancer/breast.csv', sep = ',', header = None)
-y = br.iloc[:,1:]
-labels = br.iloc[:,0]
+# Importing and selecting data
+ttt = pd.read_csv('tictactoe/tic-tac-toe.csv', sep = ',', header = None)
+ttt = ttt.infer_objects()
 
-y = y.infer_objects()
+y = ttt.iloc[:,:-1]
 
-# Droping missing values
-labels = labels[y.iloc[:,4] != '?']
-y = y[y.iloc[:,4] != '?']
-
-labels = labels[y.iloc[:,7] != '?']
-y = y[y.iloc[:,7] != '?']
-y = y.reset_index(drop = True)
-
-enc = OneHotEncoder(sparse = False, drop = 'first')
-labels_oh = enc.fit_transform(np.array(labels).reshape(-1,1)).flatten()
-
+le = LabelEncoder()
+labels = ttt.iloc[:,-1]
+labels_oh = le.fit_transform(labels)
+n_clusters = len(np.unique(labels_oh))
 
 #===========================================#
 # Formating the data
 #===========================================#
-var_distrib = np.array(['ordinal', 'ordinal', 'ordinal', 'ordinal', \
-                        'bernoulli', 'ordinal', 'categorical',
-                        'categorical', 'bernoulli'])
-    
-ord_idx = np.where(var_distrib == 'ordinal')[0]
 
-all_labels = [np.unique(y.iloc[:,idx]) for idx in ord_idx]
-all_labels[1] = ['premeno', 'lt40', 'ge40']
+var_distrib = np.array(['categorical' for var in range(y.shape[1])])
 
-all_codes = [list(range(len(lab))) for lab in all_labels]    
-
-# Encode ordinal data
-for i, idx in enumerate(ord_idx):
-    y.iloc[:,idx] = ordinal_encoding(y.iloc[:,idx], all_labels[i], all_codes[i])
+y_categ_non_enc = deepcopy(y)
+vd_categ_non_enc = deepcopy(var_distrib)
 
 # Encode categorical datas
 y, var_distrib = gen_categ_as_bin_dataset(y, var_distrib)
 
-# Encode binary data
-le = LabelEncoder()
-for colname in y.columns:
-    if y[colname].dtype != np.int64:
-        y[colname] = le.fit_transform(y[colname])
- 
 nj, nj_bin, nj_ord = compute_nj(y, var_distrib)
 y_np = y.values
 
@@ -93,7 +77,6 @@ y_np = y.values
 # Running the algorithm
 #===========================================# 
 
-# Launching the algorithm
 r = 1
 numobs = len(y)
 M = r * 4
@@ -122,13 +105,13 @@ print(confusion_matrix(labels_oh, pred))
 
 
 #=======================================================================
-# Performance measure : Finding the best specification for init and DDGMM
+# Performance measure : Finding the best specification for GLMLVM
 #=======================================================================
 
-res_folder = 'C:/Users/rfuchs/Documents/These/Experiences/mixed_algos/breast'
+res_folder = 'C:/Users/rfuchs/Documents/These/Experiences/mixed_algos/titctactoe'
 
 # GLMLVM
-# Best one: r = 1 for prince and for random
+# Best one  r = 10 for prince and r = 3 for random
 numobs = len(y)
 k = 2
     
@@ -139,8 +122,7 @@ maxstep = 100
 nb_trials= 30
 glmlvm_res = pd.DataFrame(columns = ['it_id', 'r', 'micro', 'macro', 'purity'])
 
-
-for r in range(1, 6):
+for r in range(1, 13):
     print(r)
     M = r * 4
     for i in range(nb_trials):
@@ -168,5 +150,4 @@ for r in range(1, 6):
 glmlvm_res.groupby('r').mean()
 glmlvm_res.groupby('r').std()
 
-#glmlvm_res.to_csv(res_folder + '/glmlvm_res.csv')
 glmlvm_res.to_csv(res_folder + '/glmlvm_res_random.csv')

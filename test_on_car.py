@@ -17,10 +17,10 @@ import seaborn as sns
 import autograd.numpy as np
 import matplotlib.pyplot as plt
 
-
 from sklearn.preprocessing import LabelEncoder 
 from sklearn.metrics import confusion_matrix
 from sklearn.mixture import GaussianMixture
+from imblearn.under_sampling import RandomUnderSampler
 
 from copy import deepcopy
 
@@ -39,16 +39,22 @@ warnings.filterwarnings("error") # Attention..!!!!!!!!!!!!!!!!!!!!!!!!
 #===========================================#
 # Importing and droping NaNs
 #===========================================#
-os.chdir('C:/Users/rfuchs/Documents/These/Stats/binary_dgmm/datasets')
+os.chdir('C:/Users/rfuchs/Documents/These/Stats/mixed_dgmm/datasets')
 
 # Importing and selecting data
 car = pd.read_csv('car/car.csv', sep = ',', header = None)
 car = car.infer_objects()
 
 y = car.iloc[:,:-1]
+labels = car.iloc[:,-1]
+
+# Rebalancing the data
+samp_dict = {'unacc': 100, 'acc': 100, 'vgood': 65, 'good': 69}
+rus = RandomUnderSampler(sampling_strategy = samp_dict, random_state = 0)
+y, labels = rus.fit_sample(y, labels)
+
 
 le = LabelEncoder()
-labels = car.iloc[:,-1]
 labels_oh = le.fit_transform(labels)
 k = len(np.unique(labels_oh))
 
@@ -182,3 +188,55 @@ NaNs_per_r = res_random.isna().astype(int).groupby('r').mean()
 plt.plot('r', 'macro', data=NaNs_per_r.reset_index()) # No fails either
 
 res_random.to_csv('car/random_30runs.csv')
+
+#==================================================================
+# Performance measure : Finding the best specification
+#==================================================================
+from sklearn.preprocessing import StandardScaler
+
+nj, nj_bin, nj_ord = compute_nj(y, var_distrib)
+y_np = y.values
+
+# Launching the algorithm
+numobs = len(y)
+M = 40
+k = 2
+
+seed = 1
+init_seed = 2
+    
+eps = 1E-05
+it = 30
+maxstep = 100
+
+ss = StandardScaler()
+y_scale = ss.fit_transform(y_np)
+
+
+nb_trials = 30
+miscs_df = pd.DataFrame(columns = ['it_id', 'r', 'model', 'misc'])
+
+
+for r1 in range(1,6):
+    print('r1=',r1)
+    for i in range(nb_trials):
+        # Prince init
+        prince_init = dim_reduce_init(y, k, r1, nj, var_distrib, seed = None)
+        miscs_df = miscs_df.append({'it_id': i + 1, 'r': str(r1), 'model': 'k-means', 'misc': misc(labels_oh, prince_init['preds'])},\
+                                   ignore_index=True)
+    
+        try:
+            out = glmlvm(y_np, r1, k, prince_init, var_distrib, nj, M, it, eps, maxstep, None)
+            miscs_df = miscs_df.append({'it_id': i + 1, 'r': str(r1), 'model': 'MCA & 0L-DGMM','misc': misc(labels_oh, out['classes'])}, \
+                                       ignore_index=True)
+
+        except:
+            miscs_df = miscs_df.append({'it_id': i + 1, 'r': str(r1), 'model': 'MCA & 0L-DGMM', 'misc': np.nan}, \
+                                       ignore_index=True)
+            
+
+miscs_df.boxplot(by = ['r','model'], figsize = (20, 10))
+
+miscs_df[(miscs_df['model'] == 'MCA & 0L-DGMM')].boxplot(by = 'r', figsize = (20, 10))
+
+miscs_df.to_csv('car_DGMM_MFA.csv')

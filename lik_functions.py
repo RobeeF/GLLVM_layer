@@ -8,10 +8,8 @@ Created on Tue Feb 11 19:33:27 2020
 import autograd.numpy as np
 from autograd.numpy import newaxis as n_axis
 from scipy.special import binom
-import warnings
 from sklearn.preprocessing import OneHotEncoder
-
-warnings.filterwarnings('default')
+from utils import log_1plusexp, expit
 
 def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j): 
     ''' Compute log p(y_j | zM, s1 = k1) of the jth
@@ -29,16 +27,20 @@ def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j):
     numobs = len(y_bin_j)
     
     yg = np.repeat(y_bin_j[np.newaxis], axis = 0, repeats = M)
+    yg = yg.astype(np.float)
+
+    nj_bin_j = np.float(nj_bin_j)
+
     coeff_binom = binom(nj_bin_j, yg).reshape(M, 1, numobs)
     
     eta = np.transpose(zM, (0, 2, 1)) @ lambda_bin_j[1:].reshape(1, r, 1)
     eta = eta + lambda_bin_j[0].reshape(1, 1, 1) # Add the constant
     
-    den = nj_bin_j * np.log(1 + np.exp(eta))
+    den = nj_bin_j * log_1plusexp(eta)
     num = eta @ y_bin_j[np.newaxis, np.newaxis]  
     log_p_y_z = num - den + np.log(coeff_binom)
     
-    return np.transpose(log_p_y_z, (0, 2, 1))
+    return np.transpose(log_p_y_z, (0, 2, 1)).astype(np.float)
 
 def log_py_zM_bin(lambda_bin, y_bin, zM, k, nj_bin):
     ''' Compute sum_j log p(y_j | zM, s1 = k1) of all the binomial data with a for loop
@@ -79,7 +81,7 @@ def binom_loglik_j(lambda_bin_j, y_bin_j, zM, k, ps_y, p_z_ys, nj_bin_j):
 # Ordinal likelihood functions
 ######################################################################
 
-def log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord_j): # Prendre uniquement les coeff non 0 avec nj_ord
+def log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord_j): 
     ''' Compute log p(y_j | zM, s1 = k1) of each ordinal variable 
     
     lambda_ord_j ( (nj_ord_j + r - 1) 1darray): Coefficients of the ordinal distributions in the GLLVM layer
@@ -92,16 +94,20 @@ def log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord_j): # Prendre uniquement
     '''    
     r = zM.shape[1]
     M = zM.shape[0]
+    epsilon = 1E-1 # Numeric stability
     lambda0 = lambda_ord_j[:(nj_ord_j - 1)]
     Lambda = lambda_ord_j[-r:]
  
     broad_lambda0 = lambda0.reshape((nj_ord_j - 1, 1, 1, 1))
     eta = broad_lambda0 - (np.transpose(zM, (0, 2, 1)) @ Lambda.reshape((1, r, 1)))[np.newaxis]
     
-    gamma = 1 / (1 + np.exp(-eta))
+    gamma = expit(eta)
     gamma_prev = np.concatenate([np.zeros((1,M, k, 1)), gamma])
     gamma_next = np.concatenate([gamma, np.ones((1,M, k, 1))])
     pi = gamma_next - gamma_prev
+    
+    pi = np.where(pi <= 0, epsilon, pi)
+    pi = np.where(pi >= 1, 1 - epsilon, pi)
     
     yg = np.expand_dims(y_oh_j.T, 1)[..., np.newaxis, np.newaxis] 
     
