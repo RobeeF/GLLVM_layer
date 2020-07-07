@@ -6,18 +6,14 @@ Created on Wed Mar  4 19:26:07 2020
 """
 
 
-import sys
-
 from time import time
 from scipy import linalg
 from copy import deepcopy
 from itertools import permutations
 from sklearn.metrics import precision_score
 from sklearn.preprocessing import OneHotEncoder
-from init_params import init_params, dim_reduce_init
+#from init_params import init_params, dim_reduce_init
 
-
-#from glmlvm import glmlvm
 
 import itertools
 import pandas as pd
@@ -211,16 +207,21 @@ def compute_nj(y, var_distrib):
     nj = []
     nj_bin = []
     nj_ord = []
-    for i in range(len(y.columns)):
-        if np.logical_or(var_distrib[i] == 'bernoulli',var_distrib[i] == 'binomial'): 
-            max_nj = np.max(y.iloc[:,i], axis = 0)
+    
+    for j in range(len(y.columns)):
+        if np.logical_or(var_distrib[j] == 'bernoulli',var_distrib[j] == 'binomial'): 
+            max_nj = np.max(y.iloc[:,j], axis = 0)
             nj.append(max_nj)
             nj_bin.append(max_nj)
-        else:
-            card_nj = len(np.unique(y.iloc[:,i]))
+        elif var_distrib[j] == 'ordinal':
+            card_nj = len(np.unique(y.iloc[:,j]))
             nj.append(card_nj)
             nj_ord.append(card_nj)
-    
+        elif var_distrib[j] == 'continuous':
+            nj.append(np.inf)
+        else:
+            raise ValueError('Unknown type:', var_distrib[j])
+                
     nj = np.array(nj)
     nj_bin = np.array(nj_bin)
     nj_ord = np.array(nj_ord)
@@ -283,23 +284,3 @@ def performance_testing(y, labels, k, init_method, var_distrib, nj, r_max = 5, s
                 results = results.append({'it_id': i + 1, 'r': r , 'run_time': np.nan, \
                             'nb_iterations': np.nan, 'micro': np.nan, 'macro': np.nan}, ignore_index=True)
     return results    
-
-#=============================================================================
-# Numeric stability
-#=============================================================================
-
-def log_1plusexp(eta_):
-    ''' Numerically stable version np.log(1 + np.exp(eta)) '''
-
-    eta_original = deepcopy(eta_)
-    eta_ = np.where(eta_ >= np.log(sys.float_info.max), np.log(sys.float_info.max) - 1, eta_) 
-    return np.where(eta_ >= 50, eta_original, np.log1p(np.exp(eta_)))
-        
-def expit(eta_):
-    ''' Numerically stable version of 1/(1 + exp(eta)) '''
-    
-    max_value_handled = np.log(np.sqrt(sys.float_info.max) - 1)
-    eta_ = np.where(eta_ <= - max_value_handled + 3, - max_value_handled + 3, eta_) 
-    eta_ = np.where(eta_ >= max_value_handled - 3, np.log(sys.float_info.max) - 3, eta_) 
-
-    return np.where(eta_ <= -50, np.exp(eta_), 1/(1 + np.exp(-eta_)))

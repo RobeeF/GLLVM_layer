@@ -8,10 +8,12 @@ Created on Mon Feb 10 16:55:44 2020
 import os
 os.chdir('C:/Users/rfuchs/Documents/GitHub/GLLVM_layer')
 
+from utils import gen_categ_as_bin_dataset
 
 from sklearn import manifold
 from sklearn.mixture import GaussianMixture
-from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import LabelEncoder 
+from sklearn.linear_model import LogisticRegression, LinearRegression
 
 import umap
 import prince
@@ -31,12 +33,13 @@ from autograd.numpy.linalg import cholesky, pinv
 ########################## Random initialisations ##################################
 ####################################################################################
 
-def init_params(r, nj_bin, nj_ord, k, init_seed):
+def init_params(r, nj_bin, nj_ord, nb_cont, k, init_seed):
     ''' Generate random initialisations for the parameters
     
     r (int): The dimension of latent variables
     nj_bin (nb_bin 1darray): For binary/count data: The maximum values that the variable can take. 
     nj_ord (nb_ord 1darray): For ordinal data: the number of different existing categories for each variable
+    nj_cont (int): For continuous data: the number of continuous variables in the dataset
     k (int): The number of components of the latent Gaussian mixture
     init_seed (int): The random state seed to set (Only for numpy generated data for the moment)
     --------------------------------------------------------------------------------------------
@@ -75,6 +78,7 @@ def init_params(r, nj_bin, nj_ord, k, init_seed):
     # GLLVM params    
     p1 = len(nj_bin)
     p2 = len(nj_ord)
+    p3 = nb_cont
     
     if p1 > 0:
         init['lambda_bin'] = uniform(low = -3, high = 3, size = (p1, r + 1))
@@ -98,6 +102,16 @@ def init_params(r, nj_bin, nj_ord, k, init_seed):
         
     else:
         init['lambda_ord'] = np.array([])#np.full((p2, 1), np.nan)
+        
+    if p3 > 0:
+        init['lambda_cont'] = uniform(low = -3, high = 3, size = (p1, r + 1))
+        init['lambda_cont'][:,1:] = init['lambda_cont'][:,1:] @ sigma_z[0] 
+        
+        if (r > 1): 
+            init['lambda_cont'] = np.tril(init['lambda_cont'], k = 1)
+
+    else:
+        init['lambda_cont'] = np.array([]) #np.full((p1, r + 1), np.nan)
     
     return(init)
 
@@ -172,20 +186,45 @@ def dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = 
         z_emb = mca.row_coordinates(y).values.astype(float)
         
         y = y.values.astype(int)
+        
+    elif dim_red_method == 'famd':
+        famd = prince.FAMD(n_components = r, n_iter=3, copy=True, check_input=False, \
+                               engine='auto', random_state = seed)
+        z_emb = famd.fit_transform(y).values
+            
+        # Encode categorical datas
+        y, var_distrib = gen_categ_as_bin_dataset(y, var_distrib)
+        
+        # Encode binary data
+        le = LabelEncoder()
+        for col_idx, colname in enumerate(y.columns):
+            if var_distrib[col_idx] == 'bernoulli':
+                y[colname] = le.fit_transform(y[colname])
+                
+        y = y.values#.astype(int)
+
     else:
         raise ValueError('Only tnse, umap and prince initialisation are available not ', dim_red_method)
-        
+    
+
     #==============================================================
     # Set the parameters of each data type
     #==============================================================    
     
-    y_bin = y[:, np.logical_or(var_distrib == 'bernoulli',var_distrib == 'binomial')]
-    nj_bin = nj[np.logical_or(var_distrib == 'bernoulli',var_distrib == 'binomial')]
+    y_bin = y[:, np.logical_or(var_distrib == 'bernoulli',\
+                               var_distrib == 'binomial')].astype(int)   
+    nj_bin = nj[np.logical_or(var_distrib == 'bernoulli',\
+                              var_distrib == 'binomial')]
     nb_bin = len(nj_bin)
     
-    y_ord = y[:, var_distrib == 'ordinal']    
+    y_ord = y[:, var_distrib == 'ordinal'].astype(int)    
     nj_ord = nj[var_distrib == 'ordinal']
     nb_ord = len(nj_ord)
+    
+    # Set y_count standard error to 1
+    y_cont = y[:, var_distrib == 'continuous'].astype(float) 
+    y_cont = y_cont / np.std(y_cont.astype(np.float), axis = 0, keepdims = True)
+    nb_cont = y_cont.shape[1]    
      
 
     #=======================================================
@@ -214,7 +253,7 @@ def dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = 
     init['mu']  = mu  - Ezz_T        
     
     init['w'] = w
-    init['preds'] = gmm.predict(z_emb)
+    init['classes'] = gmm.predict(z_emb)
          
     #=======================================================
     # Determining the coefficients of the GLLVM layer
@@ -260,8 +299,30 @@ def dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = 
         lambda_ord_j = np.concatenate([ol.alpha_, beta_j])
         lambda_ord.append(lambda_ord_j)        
         
+        
+        
+    # Determining the coefficients of the continuous variables
+    lambda_cont = np.zeros((nb_cont, r + 1))
+    
+    for j in range(nb_cont):
+        yj = y_cont[:,j]
+        linr = LinearRegression()
+        
+        if j < r - 1:
+            linr.fit(z_emb[:,:j + 1], yj)
+            lambda_cont[j, :j + 2] = np.concatenate([[linr.intercept_], linr.coef_])
+        else:
+            linr.fit(z_emb, yj)
+            lambda_cont[j] = np.concatenate([[linr.intercept_], linr.coef_])
+    
+    ## Identifiability of continuous coefficients
+    lambda_cont[:,1:] = lambda_cont[:,1:] @ sigma_z[0]      
+       
+        
     init['lambda_bin'] = lambda_bin
     init['lambda_ord'] = lambda_ord
+    init['lambda_cont'] = lambda_cont
+    
     
     return init
 
