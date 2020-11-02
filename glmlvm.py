@@ -46,7 +46,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     returns (dict): The predicted classes and the likelihood through the EM steps
     '''
 
-    prev_lik = - 100000
+    prev_lik = - 1E16
     tol = 0.01
     
     # Initialize the parameters
@@ -226,11 +226,14 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
             else: # Unconstrained columns
                 opt = minimize(binom_loglik_j, lambda_bin[j], args = (y_bin[:,j], zM, k, ps_y, p_z_ys, nj_bin[j]), 
                                tol = tol, method='BFGS', jac = bin_grad_j, options = {'maxiter': maxstep})
-                    
+            
+            res = opt.x
             if not(opt.success):
-                raise RuntimeError('Binomial optimization failed')
+                res = lambda_bin[j]
+                warnings.warn('One of the binomial optimisations has failed', RuntimeWarning)
+                #raise RuntimeError('Binomial optimization failed')
                 
-            lambda_bin[j, :] = deepcopy(opt.x)  
+            lambda_bin[j, :] = deepcopy(res)  
 
         # Last identifiability part
         if nb_bin > 0:
@@ -264,12 +267,15 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
                                tol = tol, method='trust-constr',  jac = ord_grad_j, \
                                constraints = linear_constraint, hess = '2-point', options = {'maxiter': maxstep})
             
+            res = opt.x
             if not(opt.success):
-                raise RuntimeError('Ordinal optimization failed')
+                res = lambda_ord[j]
+                warnings.warn('One of the ordinal optimisations has failed', RuntimeWarning)
+                #raise RuntimeError('Ordinal optimization failed')
                      
             # Ensure identifiability for Lambda_j
-            new_lambda_ord_j = (opt.x[-r: ].reshape(1, r) @ sigma_z[0]).flatten() 
-            new_lambda_ord_j = np.hstack([deepcopy(opt.x[: nj_ord[j] - 1]), new_lambda_ord_j]) # Complete with lambda_0 coefficients
+            new_lambda_ord_j = (res[-r: ].reshape(1, r) @ sigma_z[0]).flatten() 
+            new_lambda_ord_j = np.hstack([deepcopy(res[: nj_ord[j] - 1]), new_lambda_ord_j]) # Complete with lambda_0 coefficients
             lambda_ord[j] = new_lambda_ord_j
 
         #=======================================================
@@ -295,10 +301,13 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
                                tol = tol, method='BFGS', jac = cont_grad_j, 
                                options = {'maxiter': maxstep})
     
+            res = opt.x
             if not(opt.success):
-                raise RuntimeError('Continuous optimization failed')
+                res = lambda_cont[j]
+                warnings.warn('One of the continuous optimisations has failed', RuntimeWarning)
+                #raise RuntimeError('Continuous optimization failed')
                
-            lambda_cont[j, :] = deepcopy(opt.x)  
+            lambda_cont[j, :] = deepcopy(res)  
 
     
         # Last identifiability part

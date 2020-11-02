@@ -77,7 +77,8 @@ nb_cont = np.sum(var_distrib == 'continuous')
 p_new = y.shape[1]
 
 # Feature category (cf)
-cf_non_enc = np.logical_or(vd_categ_non_enc == 'categorical', vd_categ_non_enc == 'bernoulli')
+cf_non_enc = np.logical_or(vd_categ_non_enc == 'categorical',\
+                           vd_categ_non_enc == 'bernoulli')
 
 # Non encoded version of the dataset:
 y_nenc_typed = y_categ_non_enc.astype(np.object)

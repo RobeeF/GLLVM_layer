@@ -70,7 +70,18 @@ y_categ_non_enc = deepcopy(y)
 vd_categ_non_enc = deepcopy(var_distrib)
 
 # Encode categorical datas
-y, var_distrib = gen_categ_as_bin_dataset(y, var_distrib)
+#y, var_distrib = gen_categ_as_bin_dataset(y, var_distrib)
+
+
+#######################################################
+# Test to encode categorical variables
+le = LabelEncoder()
+for col_idx, colname in enumerate(y.columns):
+    if var_distrib[col_idx] == 'categorical': 
+        y[colname] = le.fit_transform(y[colname])
+
+#################################################
+
 
 # Encode binary data
 le = LabelEncoder()
@@ -81,12 +92,11 @@ for col_idx, colname in enumerate(y.columns):
 enc = OneHotEncoder(sparse = False, drop = 'first')
 labels_oh = enc.fit_transform(np.array(labels).reshape(-1,1)).flatten()
 
-nj, nj_bin, nj_ord = compute_nj(y, var_distrib)
+nj, nj_bin, nj_ord, nj_categ = compute_nj(y, var_distrib)
 y_np = y.values
 nb_cont = np.sum(var_distrib == 'continuous')
 
 p_new = y.shape[1]
-
 
 # Feature category (cf)
 cf_non_enc = np.logical_or(vd_categ_non_enc == 'categorical', vd_categ_non_enc == 'bernoulli')

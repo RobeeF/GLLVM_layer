@@ -207,6 +207,7 @@ def compute_nj(y, var_distrib):
     nj = []
     nj_bin = []
     nj_ord = []
+    nj_categ = []
     
     for j in range(len(y.columns)):
         if np.logical_or(var_distrib[j] == 'bernoulli',var_distrib[j] == 'binomial'): 
@@ -219,14 +220,19 @@ def compute_nj(y, var_distrib):
             nj_ord.append(card_nj)
         elif var_distrib[j] == 'continuous':
             nj.append(np.inf)
+        elif var_distrib[j] == 'categorical':
+            card_nj = len(np.unique(y.iloc[:,j]))
+            nj.append(card_nj)
+            nj_categ.append(card_nj)
         else:
             raise ValueError('Unknown type:', var_distrib[j])
                 
     nj = np.array(nj)
     nj_bin = np.array(nj_bin)
     nj_ord = np.array(nj_ord)
+    nj_categ = np.array(nj_categ)
 
-    return nj, nj_bin, nj_ord
+    return nj, nj_bin, nj_ord, nj_categ
 
 
 def performance_testing(y, labels, k, init_method, var_distrib, nj, r_max = 5, seed = None):
