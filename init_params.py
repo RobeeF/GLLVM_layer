@@ -33,7 +33,7 @@ from autograd.numpy.linalg import cholesky, pinv
 ########################## Random initialisations ##################################
 ####################################################################################
 
-def init_params(r, nj_bin, nj_ord, nb_cont, k, init_seed):
+def init_params(r, nj_bin, nj_ord, nj_categ, nb_cont, k, init_seed):
     ''' Generate random initialisations for the parameters
     
     r (int): The dimension of latent variables
@@ -79,6 +79,8 @@ def init_params(r, nj_bin, nj_ord, nb_cont, k, init_seed):
     p1 = len(nj_bin)
     p2 = len(nj_ord)
     p3 = nb_cont
+    p4 = len(nj_categ)
+
     
     if p1 > 0:
         init['lambda_bin'] = uniform(low = -3, high = 3, size = (p1, r + 1))
@@ -111,7 +113,19 @@ def init_params(r, nj_bin, nj_ord, nb_cont, k, init_seed):
             init['lambda_cont'] = np.tril(init['lambda_cont'], k = 1)
 
     else:
-        init['lambda_cont'] = np.array([]) #np.full((p1, r + 1), np.nan)
+        init['lambda_cont'] = np.array([]) 
+        
+    if p4 > 0:
+        lambda_categ = []
+        for j in range(p4):
+            lambda0_categ = np.sort(uniform(low = -2, high = 2, size = nj_categ[j]))
+            Lambda_categ = uniform(low = -3, high = 3, size = (nj_categ[j], r))
+            lambda_categ.append(np.hstack([lambda0_categ[..., n_axis], Lambda_categ]))
+              
+        init['lambda_categ'] = lambda_categ
+    else:
+        init['lambda_categ'] = []
+        
     
     return(init)
 
@@ -221,6 +235,10 @@ def dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = 
     nj_ord = nj[var_distrib == 'ordinal']
     nb_ord = len(nj_ord)
     
+    y_categ = y[:, var_distrib == 'categorical']
+    nj_categ = nj[var_distrib == 'categorical']
+    nb_categ = len(nj_categ)
+    
     # Set y_count standard error to 1
     y_cont = y[:, var_distrib == 'continuous'].astype(float) 
     y_cont = y_cont / np.std(y_cont.astype(np.float), axis = 0, keepdims = True)
@@ -300,7 +318,6 @@ def dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = 
         lambda_ord.append(lambda_ord_j)        
         
         
-        
     # Determining the coefficients of the continuous variables
     lambda_cont = np.zeros((nb_cont, r + 1))
     
@@ -316,14 +333,27 @@ def dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = 
             lambda_cont[j] = np.concatenate([[linr.intercept_], linr.coef_])
     
     ## Identifiability of continuous coefficients
-    lambda_cont[:,1:] = lambda_cont[:,1:] @ sigma_z[0]      
+    lambda_cont[:,1:] = lambda_cont[:,1:] @ sigma_z[0]     
+    
+    # Determining lambda_categ coefficients
+    lambda_categ = []
+    
+    for j in range(nb_categ):
+        yj = y_categ[:,j]
+        
+        lr = LogisticRegression(multi_class = 'multinomial')
+        lr.fit(z_emb, yj)        
+
+        ## Identifiability of categ coefficients
+        beta_j = lr.coef_ @ sigma_z[0] 
+        lambda_categ.append(np.hstack([lr.intercept_[...,n_axis], beta_j]))  
        
         
     init['lambda_bin'] = lambda_bin
     init['lambda_ord'] = lambda_ord
     init['lambda_cont'] = lambda_cont
-    
-    
+    init['lambda_categ'] = lambda_categ
+
     return init
 
 

@@ -7,8 +7,8 @@ Created on Fri Mar  6 08:52:28 2020
 
 
 from lik_functions import log_py_zM_bin, log_py_zM_ord, binom_loglik_j,\
-        ord_loglik_j, log_py_zM_cont, cont_loglik_j
-from lik_gradients import bin_grad_j, ord_grad_j, cont_grad_j
+        ord_loglik_j, log_py_zM_cont, cont_loglik_j, log_py_zM_categ, categ_loglik_j
+from lik_gradients import bin_grad_j, ord_grad_j, cont_grad_j, categ_grad_j
 
 import autograd.numpy as np
 from autograd.numpy import newaxis as n_axis
@@ -55,6 +55,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     lambda_bin = deepcopy(init['lambda_bin'])
     lambda_ord = deepcopy(init['lambda_ord'])
     lambda_cont = deepcopy(init['lambda_cont'])
+    lambda_categ = deepcopy(init['lambda_categ'])
     w = deepcopy(init['w'])
     
     numobs = len(y)
@@ -68,6 +69,10 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     y_bin = y[:, np.logical_or(var_distrib == 'bernoulli',var_distrib == 'binomial')]
     nj_bin = nj[np.logical_or(var_distrib == 'bernoulli',var_distrib == 'binomial')]
     nb_bin = len(nj_bin)
+    
+    y_categ = y[:, var_distrib == 'categorical']
+    nj_categ = nj[var_distrib == 'categorical'].astype(int)
+    nb_categ = len(nj_categ)  
         
     y_ord = y[:, var_distrib == 'ordinal']    
     nj_ord = nj[var_distrib == 'ordinal'].astype(int)
@@ -79,7 +84,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     # Set y_count standard error to 1
     y_cont = y_cont / y_cont.std(axis = 0, keepdims = True)    
 
-    assert nb_ord + nb_bin + nb_cont > 0 
+    assert nb_ord + nb_bin + nb_cont + nb_categ > 0 
                      
     while ((hh < it) & (ratio > eps)):
         hh = hh + 1
@@ -104,7 +109,9 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         
         if nb_cont:
             log_py_zM += log_py_zM_cont(lambda_cont, y_cont, zM, k)
-            
+
+        if nb_categ:
+            log_py_zM += log_py_zM_categ(lambda_categ, y_categ, zM, k, nj_categ) 
         
         py_zM = np.exp(log_py_zM)
         py_zM = np.where(py_zM == 0, 1E-50, py_zM)
@@ -313,7 +320,36 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         # Last identifiability part
         if nb_cont > 0:
             lambda_cont[:,1:] = lambda_cont[:,1:] @ sigma_z[0] 
-
+            
+            
+        #=======================================================
+        # Categorical link parameters
+        #=======================================================
+                
+        new_lambda_categ = []
+        
+        for j in range(nb_categ):
+            enc = OneHotEncoder(categories='auto')
+            y_oh = enc.fit_transform(y_categ[:,j][..., n_axis]).toarray()    
+                        
+            opt = minimize(categ_loglik_j, lambda_categ[j], \
+                        args = (y_oh, zM, k, ps_y, p_z_ys, nj_categ[j]), \
+                               tol = tol, method='BFGS', jac = categ_grad_j, 
+                               options = {'maxiter': maxstep})
+            
+            res = opt.x
+            if not(opt.success): # If the program fail, keep the old estimate as value
+                res = lambda_categ[j]
+                warnings.warn('One of the categorical optimisations has failed', RuntimeWarning)
+            
+            res = res.reshape(nj_categ[j], r + 1, order = 'C')
+    
+            # Ensure identifiability for Lambda_j
+            new_lambda_categ_j = res[:, -r: ] @ sigma_z[0]
+            new_lambda_categ_j = np.hstack([deepcopy(res[:, 0][..., n_axis]), new_lambda_categ_j]) 
+            new_lambda_categ.append(new_lambda_categ_j)
+            
+        lambda_categ = deepcopy(new_lambda_categ)
          
         ###########################################################################
         ################## Clustering parameters updating #########################
@@ -326,7 +362,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         if (hh < 3): 
             ratio = 2 * eps
         #print(hh)
-        print(likelihood)
+        #print(likelihood)
         
         # Refresh the classes only if they provide a better explanation of the data
         if prev_lik > new_lik:

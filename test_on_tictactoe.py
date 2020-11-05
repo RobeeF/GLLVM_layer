@@ -71,15 +71,21 @@ y_categ_non_enc = deepcopy(y)
 vd_categ_non_enc = deepcopy(var_distrib)
 
 # Encode categorical datas
-y, var_distrib = gen_categ_as_bin_dataset(y, var_distrib)
+#y, var_distrib = gen_categ_as_bin_dataset(y, var_distrib)
 
-nj, nj_bin, nj_ord = compute_nj(y, var_distrib)
+#######################################################
+# Test to encode categorical variables
+le = LabelEncoder()
+for col_idx, colname in enumerate(y.columns):
+    if var_distrib[col_idx] == 'categorical': 
+        y[colname] = le.fit_transform(y[colname])
+
+#################################################
+
+nj, nj_bin, nj_ord, nj_categ = compute_nj(y, var_distrib)
 y_np = y.values
 
-
-
 p_new = y.shape[1]
-
 
 # Feature category (cf)
 cf_non_enc = np.logical_or(vd_categ_non_enc == 'categorical', vd_categ_non_enc == 'bernoulli')
@@ -91,6 +97,10 @@ y_np_nenc = y_nenc_typed.values
 # Defining distances over the non encoded features
 dm = gower_matrix(y_nenc_typed, cat_features = cf_non_enc) 
 
+dtype = {y.columns[j]: np.float64 if (var_distrib[j] != 'bernoulli') and \
+        (var_distrib[j] != 'categorical') else np.str for j in range(p_new)}
+
+y = y.astype(dtype, copy=True)
 
 #===========================================#
 # Running the algorithm
@@ -143,17 +153,16 @@ glmlvm_res = pd.DataFrame(columns = ['it_id', 'r', 'init' , 'micro', \
                                      'macro', 'silhouette'])
 inits = ['random', 'MCA']
 
-for r in range(2, 6):
+for r in range(1, 6):
     print(r)
     M = r * 4
     for init_alg in inits:
         for i in range(nb_trials):
             if init_alg == 'random':
-                init = init_params(r, nj_bin, nj_ord, 0, k, None)
+                init = init_params(r, nj_bin, nj_ord, nj_categ, 0, k, None)
             else:
-                init = dim_reduce_init(y, k, r, nj, var_distrib,\
+                init_ = dim_reduce_init(y, k, r, nj, var_distrib,\
                                        dim_red_method = 'prince', seed = None)
-        
             try:
                 out = glmlvm(y_np, r, k, init, var_distrib, nj, M, it, eps, maxstep, seed = None)
                 m, pred = misc(labels_oh, out['classes'], True) 
@@ -186,5 +195,9 @@ glmlvm_res_mca.to_csv(res_folder + '/glmlvm_res_mca.csv')
 
 glmlvm_res_mca.groupby(['r']).mean().max()
 glmlvm_res_random.groupby(['r']).mean().max()
+
+glmlvm_res_mca.std()
+glmlvm_res_random.std()
+
 
 glmlvm_res_random.to_csv(res_folder + '/glmlvm_res_random.csv')
