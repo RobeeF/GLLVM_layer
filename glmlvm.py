@@ -25,7 +25,7 @@ from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
 
 import warnings
-warnings.filterwarnings("default")
+warnings.filterwarnings("error")
 
 def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 100, seed = None): 
     ''' Fit a Generalized Linear Mixture of Latent Variables Model (GLMLVM)

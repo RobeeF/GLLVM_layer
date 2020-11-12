@@ -48,6 +48,10 @@ mush = mush.infer_objects()
 
 y = mush.iloc[:,1:]
 
+# Keep only the variables that have at least 2 modalities
+one_modality_vars = np.array([len(set(y[col])) == 1 for col in y.columns])
+y = y.iloc[:, ~one_modality_vars]
+
 le = LabelEncoder()
 labels = mush.iloc[:,0]
 labels_oh = le.fit_transform(labels)
@@ -65,10 +69,10 @@ k = len(np.unique(labels_oh))
 #===========================================#
 
 var_distrib = np.array(['categorical', 'categorical', 'categorical', 'bernoulli', 'categorical',\
-                        'categorical', 'categorical', 'bernoulli', 'categorical', 'categorical',\
+                        'bernoulli', 'bernoulli', 'bernoulli', 'categorical', 'bernoulli',\
                         'categorical', 'categorical', 'categorical', 'categorical', 'categorical', \
-                        'categorical', 'categorical', 'ordinal', 'categorical', 'categorical', \
-                        'categorical', 'categorical'])
+                        'bernoulli', 'ordinal', 'categorical', 'categorical', \
+                        'ordinal', 'categorical'])
 
 ord_idx = np.where(var_distrib == 'ordinal')[0]
 
@@ -92,7 +96,7 @@ for colname in y.columns:
     if y[colname].dtype != np.int64:
         y[colname] = le.fit_transform(y[colname])
 
-nj, nj_bin, nj_ord = compute_nj(y, var_distrib)
+nj, nj_bin, nj_ord, nj_categ = compute_nj(y, var_distrib)
 y_np = y.values
 
 p_new = y.shape[1]
@@ -164,6 +168,8 @@ nb_trials= 30
 glmlvm_res = pd.DataFrame(columns = ['it_id', 'r', 'init' , 'micro', \
                                      'macro', 'silhouette'])
 inits = ['random', 'MCA']
+inits = ['random']
+
 
 for r in range(2, 6):
     print(r)
@@ -171,7 +177,7 @@ for r in range(2, 6):
     for init_alg in inits:
         for i in range(nb_trials):
             if init_alg == 'random':
-                init = init_params(r, nj_bin, nj_ord, 0, k, None)
+                init = init_params(r, nj_bin, nj_ord, nj_categ, 0, k, None)
             else:
                 init = dim_reduce_init(y, k, r, nj, var_distrib,\
                                        dim_red_method = 'prince', seed = None)
@@ -191,17 +197,17 @@ for r in range(2, 6):
                 print('micro', micro)
                 print('macro', macro)
                 print('sil', sil)
-
+    
                 glmlvm_res = glmlvm_res.append({'it_id': i + 1, 'r': str(r),
                                                 'init': init_alg, \
                                                 'micro': micro, 'macro': macro, \
                                                 'silhouette': sil}, ignore_index=True)
             except (ValueError, LinAlgError):
                 glmlvm_res = glmlvm_res.append({'it_id': i + 1, 'r': str(r),\
-                                                'init': init_alg, \
-                                                'micro': np.nan, 'macro': np.nan, \
-                                                'silhouette': np.nan}, ignore_index=True)
-           
+                                                    'init': init_alg, \
+                                                    'micro': np.nan, 'macro': np.nan, \
+                                                    'silhouette': np.nan}, ignore_index=True)
+               
 glmlvm_res.groupby(['r', 'init']).mean()
 glmlvm_res.groupby(['r', 'init']).std()
 
@@ -218,6 +224,7 @@ glmlvm_res_random[['micro', 'macro']].isna().sum(axis = 0)
 glmlvm_res_random.groupby(['r']).mean().max()
 glmlvm_res_random.groupby(['r']).std()
 
-glmlvm_res_mca.to_csv(res_folder + '/glmlvm_res_mca.csv')
-glmlvm_res_random.to_csv(res_folder + '/glmlvm_res_random.csv')
+glmlvm_res.to_csv(res_folder + '/glmlvm_res_all_best_sil.csv')
+glmlvm_res_mca.to_csv(res_folder + '/glmlvm_res_mca_best_sil.csv')
+glmlvm_res_random.to_csv(res_folder + '/glmlvm_res_random_best_sil.csv')
 
