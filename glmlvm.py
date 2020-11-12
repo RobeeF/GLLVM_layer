@@ -10,6 +10,9 @@ from lik_functions import log_py_zM_bin, log_py_zM_ord, binom_loglik_j,\
         ord_loglik_j, log_py_zM_cont, cont_loglik_j
 from lik_gradients import bin_grad_j, ord_grad_j, cont_grad_j
 
+
+from numeric_stability import ensure_psd
+
 import autograd.numpy as np
 from autograd.numpy import newaxis as n_axis
 from autograd.numpy import transpose as t
@@ -185,6 +188,8 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         muTmu = mu @ t(mu, (0,2,1))  
         sigma = np.sum(ps_y[..., n_axis, n_axis] * (E_zz_sy - \
                     muTmu[n_axis]), axis = 0) / den
+
+        sigma = ensure_psd(sigma)
          
         # Enforcing identifiability constraints
         E_zzT = (w[..., n_axis, n_axis] * (sigma + muTmu)).sum(0, keepdims = True)
@@ -199,7 +204,9 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         
         del(E_z_sy)
         del(E_zz_sy)
-         
+
+        sigma = ensure_psd(sigma)
+
         
         ###########################################################################
         ############################ M step #######################################
