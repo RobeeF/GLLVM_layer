@@ -5,9 +5,6 @@ Created on Mon Feb 10 16:55:44 2020
 @author: Utilisateur
 """
 
-import os
-os.chdir('C:/Users/rfuchs/Documents/GitHub/GLLVM_layer')
-
 from utils import gen_categ_as_bin_dataset
 
 from sklearn import manifold
