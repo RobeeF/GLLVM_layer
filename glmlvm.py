@@ -7,8 +7,8 @@ Created on Fri Mar  6 08:52:28 2020
 
 
 from lik_functions import log_py_zM_bin, log_py_zM_ord, binom_loglik_j,\
-        ord_loglik_j, log_py_zM_cont, cont_loglik_j
-from lik_gradients import bin_grad_j, ord_grad_j, cont_grad_j
+        ord_loglik_j
+from lik_gradients import bin_grad_j, ord_grad_j
 
 
 from numeric_stability import ensure_psd
@@ -57,7 +57,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     sigma = deepcopy(init['sigma'])
     lambda_bin = deepcopy(init['lambda_bin'])
     lambda_ord = deepcopy(init['lambda_ord'])
-    lambda_cont = deepcopy(init['lambda_cont'])
+
     w = deepcopy(init['w'])
     
     numobs = len(y)
@@ -75,14 +75,8 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     y_ord = y[:, var_distrib == 'ordinal']    
     nj_ord = nj[var_distrib == 'ordinal'].astype(int)
     nb_ord = len(nj_ord)
-    
-    y_cont = y[:, var_distrib == 'continuous'] 
-    nb_cont = y_cont.shape[1]
-    
-    # Set y_count standard error to 1
-    y_cont = y_cont / y_cont.std(axis = 0, keepdims = True)    
-
-    assert nb_ord + nb_bin + nb_cont > 0 
+        
+    assert nb_ord + nb_bin  > 0 
                      
     while ((hh < it) & (ratio > eps)):
         hh = hh + 1
@@ -104,10 +98,6 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
                 
         if nb_ord: # Then the ordinal variables 
             log_py_zM = log_py_zM + log_py_zM_ord(lambda_ord, y_ord, zM, k, nj_ord)[:,:,:,0] 
-        
-        if nb_cont:
-            log_py_zM += log_py_zM_cont(lambda_cont, y_cont, zM, k)
-            
         
         py_zM = np.exp(log_py_zM)
         py_zM = np.where(py_zM == 0, 1E-50, py_zM)
@@ -285,43 +275,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
             new_lambda_ord_j = np.hstack([deepcopy(res[: nj_ord[j] - 1]), new_lambda_ord_j]) # Complete with lambda_0 coefficients
             lambda_ord[j] = new_lambda_ord_j
 
-        #=======================================================
-        # Continuous link parameters
-        #=======================================================               
-         
-        for j in range(nb_cont):
-            if j < r - 1: # Constrained columns
-                nb_constraints = r - j - 1
-                lcs = np.hstack([np.zeros((nb_constraints, j + 2)), np.eye(nb_constraints)])
-                linear_constraint = LinearConstraint(lcs, np.full(nb_constraints, 0), \
-                                                 np.full(nb_constraints, 0), keep_feasible = True)
-            
-                opt = minimize(cont_loglik_j, lambda_cont[j] , \
-                        args = (y_cont[:,j], zM, k, ps_y, p_z_ys), 
-                               tol = tol, method='trust-constr',  jac = cont_grad_j, \
-                               constraints = linear_constraint, hess = '2-point', \
-                                   options = {'maxiter': maxstep})
-                        
-            else: # Unconstrained columns
-                opt = minimize(cont_loglik_j, lambda_cont[j], \
-                        args = (y_cont[:,j], zM, k, ps_y, p_z_ys), \
-                               tol = tol, method='BFGS', jac = cont_grad_j, 
-                               options = {'maxiter': maxstep})
-    
-            res = opt.x
-            if not(opt.success):
-                res = lambda_cont[j]
-                warnings.warn('One of the continuous optimisations has failed', RuntimeWarning)
-                #raise RuntimeError('Continuous optimization failed')
-               
-            lambda_cont[j, :] = deepcopy(res)  
 
-    
-        # Last identifiability part
-        if nb_cont > 0:
-            lambda_cont[:,1:] = lambda_cont[:,1:] @ sigma_z[0] 
-
-         
         ###########################################################################
         ################## Clustering parameters updating #########################
         ###########################################################################
