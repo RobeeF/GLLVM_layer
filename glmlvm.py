@@ -5,9 +5,10 @@ Created on Fri Mar  6 08:52:28 2020
 @author: Utilisateur
 """
 
-from lik_functions import log_py_zM_bin, log_py_zM_ord, binom_loglik_j, ord_loglik_j
-from lik_gradients import bin_grad_j, ord_grad_j
-from utils import ensure_psd
+
+from lik_functions import log_py_zM_bin, log_py_zM_ord, binom_loglik_j,\
+        ord_loglik_j, log_py_zM_cont, cont_loglik_j
+from lik_gradients import bin_grad_j, ord_grad_j, cont_grad_j
 
 import autograd.numpy as np
 from autograd.numpy import newaxis as n_axis
@@ -24,12 +25,12 @@ from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
 
 import warnings
-warnings.filterwarnings("error")
+warnings.filterwarnings("default")
 
 def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 100, seed = None): 
     ''' Fit a Generalized Linear Mixture of Latent Variables Model (GLMLVM)
     
-    y (numobs x p ndarray): The observations containing categorical variables
+    y (numobs x p ndarray): The observations containing discrete variables
     r (int): The dimension of latent variables
     k (int): The number of components of the latent Gaussian mixture
     it (int): The maximum number of EM iterations of the algorithm
@@ -38,13 +39,14 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     var_distrib (p 1darray): An array containing the types of the variables in y 
     nj (p 1darray): For binary/count data: The maximum values that the variable can take. 
                     For ordinal data: the number of different existing categories for each variable
+                    For continuous variable: 1
     M (int): The number of MC points to compute 
     seed (int): The random state seed to set (Only for numpy generated data for the moment)
     ------------------------------------------------------------------------------------------------
     returns (dict): The predicted classes and the likelihood through the EM steps
     '''
 
-    prev_lik = - 100000
+    prev_lik = - 1E16
     tol = 0.01
     
     # Initialize the parameters
@@ -52,6 +54,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     sigma = deepcopy(init['sigma'])
     lambda_bin = deepcopy(init['lambda_bin'])
     lambda_ord = deepcopy(init['lambda_ord'])
+    lambda_cont = deepcopy(init['lambda_cont'])
     w = deepcopy(init['w'])
     
     numobs = len(y)
@@ -67,10 +70,16 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     nb_bin = len(nj_bin)
         
     y_ord = y[:, var_distrib == 'ordinal']    
-    nj_ord = nj[var_distrib == 'ordinal']
+    nj_ord = nj[var_distrib == 'ordinal'].astype(int)
     nb_ord = len(nj_ord)
     
-    assert nb_ord + nb_bin > 0 
+    y_cont = y[:, var_distrib == 'continuous'] 
+    nb_cont = y_cont.shape[1]
+    
+    # Set y_count standard error to 1
+    y_cont = y_cont / y_cont.std(axis = 0, keepdims = True)    
+
+    assert nb_ord + nb_bin + nb_cont > 0 
                      
     while ((hh < it) & (ratio > eps)):
         hh = hh + 1
@@ -92,6 +101,10 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
                 
         if nb_ord: # Then the ordinal variables 
             log_py_zM = log_py_zM + log_py_zM_ord(lambda_ord, y_ord, zM, k, nj_ord)[:,:,:,0] 
+        
+        if nb_cont:
+            log_py_zM += log_py_zM_cont(lambda_cont, y_cont, zM, k)
+            
         
         py_zM = np.exp(log_py_zM)
         py_zM = np.where(py_zM == 0, 1E-50, py_zM)
@@ -172,9 +185,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         muTmu = mu @ t(mu, (0,2,1))  
         sigma = np.sum(ps_y[..., n_axis, n_axis] * (E_zz_sy - \
                     muTmu[n_axis]), axis = 0) / den
-            
-        sigma = ensure_psd(sigma)
-
+         
         # Enforcing identifiability constraints
         E_zzT = (w[..., n_axis, n_axis] * (sigma + muTmu)).sum(0, keepdims = True)
         Ezz_T = (w[...,n_axis, n_axis] * mu).sum(0, keepdims = True)
@@ -188,7 +199,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         
         del(E_z_sy)
         del(E_zz_sy)
-        
+         
         
         ###########################################################################
         ############################ M step #######################################
@@ -215,11 +226,14 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
             else: # Unconstrained columns
                 opt = minimize(binom_loglik_j, lambda_bin[j], args = (y_bin[:,j], zM, k, ps_y, p_z_ys, nj_bin[j]), 
                                tol = tol, method='BFGS', jac = bin_grad_j, options = {'maxiter': maxstep})
-                    
+            
+            res = opt.x
             if not(opt.success):
-                raise RuntimeError('Binomial optimization failed')
+                res = lambda_bin[j]
+                warnings.warn('One of the binomial optimisations has failed', RuntimeWarning)
+                #raise RuntimeError('Binomial optimization failed')
                 
-            lambda_bin[j, :] = deepcopy(opt.x)  
+            lambda_bin[j, :] = deepcopy(res)  
 
         # Last identifiability part
         if nb_bin > 0:
@@ -253,14 +267,53 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
                                tol = tol, method='trust-constr',  jac = ord_grad_j, \
                                constraints = linear_constraint, hess = '2-point', options = {'maxiter': maxstep})
             
+            res = opt.x
             if not(opt.success):
-                raise RuntimeError('Ordinal optimization failed')
+                res = lambda_ord[j]
+                warnings.warn('One of the ordinal optimisations has failed', RuntimeWarning)
+                #raise RuntimeError('Ordinal optimization failed')
                      
             # Ensure identifiability for Lambda_j
-            new_lambda_ord_j = (opt.x[-r: ].reshape(1, r) @ sigma_z[0]).flatten() 
-            new_lambda_ord_j = np.hstack([deepcopy(opt.x[: nj_ord[j] - 1]), new_lambda_ord_j]) # Complete with lambda_0 coefficients
+            new_lambda_ord_j = (res[-r: ].reshape(1, r) @ sigma_z[0]).flatten() 
+            new_lambda_ord_j = np.hstack([deepcopy(res[: nj_ord[j] - 1]), new_lambda_ord_j]) # Complete with lambda_0 coefficients
             lambda_ord[j] = new_lambda_ord_j
+
+        #=======================================================
+        # Continuous link parameters
+        #=======================================================               
+         
+        for j in range(nb_cont):
+            if j < r - 1: # Constrained columns
+                nb_constraints = r - j - 1
+                lcs = np.hstack([np.zeros((nb_constraints, j + 2)), np.eye(nb_constraints)])
+                linear_constraint = LinearConstraint(lcs, np.full(nb_constraints, 0), \
+                                                 np.full(nb_constraints, 0), keep_feasible = True)
             
+                opt = minimize(cont_loglik_j, lambda_cont[j] , \
+                        args = (y_cont[:,j], zM, k, ps_y, p_z_ys), 
+                               tol = tol, method='trust-constr',  jac = cont_grad_j, \
+                               constraints = linear_constraint, hess = '2-point', \
+                                   options = {'maxiter': maxstep})
+                        
+            else: # Unconstrained columns
+                opt = minimize(cont_loglik_j, lambda_cont[j], \
+                        args = (y_cont[:,j], zM, k, ps_y, p_z_ys), \
+                               tol = tol, method='BFGS', jac = cont_grad_j, 
+                               options = {'maxiter': maxstep})
+    
+            res = opt.x
+            if not(opt.success):
+                res = lambda_cont[j]
+                warnings.warn('One of the continuous optimisations has failed', RuntimeWarning)
+                #raise RuntimeError('Continuous optimization failed')
+               
+            lambda_cont[j, :] = deepcopy(res)  
+
+    
+        # Last identifiability part
+        if nb_cont > 0:
+            lambda_cont[:,1:] = lambda_cont[:,1:] @ sigma_z[0] 
+
          
         ###########################################################################
         ################## Clustering parameters updating #########################
@@ -273,7 +326,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         if (hh < 3): 
             ratio = 2 * eps
         #print(hh)
-        #print(likelihood)
+        print(likelihood)
         
         # Refresh the classes only if they provide a better explanation of the data
         if prev_lik > new_lik:

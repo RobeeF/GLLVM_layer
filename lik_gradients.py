@@ -6,7 +6,7 @@ Created on Thu Feb 13 09:43:11 2020
 """
 
 from autograd import grad
-from lik_functions import ord_loglik_j, binom_loglik_j
+from lik_functions import ord_loglik_j, binom_loglik_j, cont_loglik_j
 
 ###########################################################################
 # Binary/count gradient
@@ -49,3 +49,23 @@ def ord_grad_j(lambda_ord_j, y_oh, zM, k, ps_y, p_z_ys, nj_ord_j):
     
     grad_ord_lik = grad(ord_loglik_j)
     return grad_ord_lik(lambda_ord_j, y_oh, zM, k, ps_y, p_z_ys, nj_ord_j)
+
+###########################################################################
+# Continuous variables gradient
+###########################################################################
+
+def cont_grad_j(lambda_cont_j, y_cont_j, zM, k, ps_y, p_z_ys):
+    ''' Compute the gradient of the expected log-likelihood for each continuous variable y_j
+    
+    lambda_cont_j ( (nj_cont_j + r - 1) 1darray): Coefficients of the continal distributions in the GLLVM layer
+    y_oh_j (numobs 1darray): The subset containing only the continal variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    ps_y (numobs x k ndarray): p(s_i = k1 | y_i) for all k1 in [1,k] and i in [1,numobs]
+    p_z_ys (M x numobs x k ndarray): p(z_i | y_i, s_i = k) for all m in [1,M], k1 in [1,k] and i in [1,numobs]
+    --------------------------------------------------------------
+    returns (float): grad_j(E_{zM, s | y, theta}(y_cont_j | zM, s1 = k1))
+    ''' 
+    
+    grad_cont_lik = grad(cont_loglik_j)
+    return grad_cont_lik(lambda_cont_j, y_cont_j, zM, k, ps_y, p_z_ys)

@@ -6,27 +6,20 @@ Created on Wed Mar  4 19:26:07 2020
 """
 
 
-import sys
-
 from time import time
 from scipy import linalg
 from copy import deepcopy
 from itertools import permutations
 from sklearn.metrics import precision_score
 from sklearn.preprocessing import OneHotEncoder
-from init_params import init_params, dim_reduce_init
+#from init_params import init_params, dim_reduce_init
 
-#from glmlvm import glmlvm
 
 import itertools
 import pandas as pd
 import matplotlib as mpl
-import matplotlib.pyplot as plt
-
 import autograd.numpy as np
-from autograd.numpy.linalg import multi_dot, eigh
-from autograd.numpy.linalg import cholesky, LinAlgError
-
+import matplotlib.pyplot as plt
 
 def sample_MC_points(zM, p_z_ys, nb_points):
     ''' Resample nb_points from zM with the highest p_z_ys probability
@@ -214,21 +207,32 @@ def compute_nj(y, var_distrib):
     nj = []
     nj_bin = []
     nj_ord = []
-    for i in range(len(y.columns)):
-        if np.logical_or(var_distrib[i] == 'bernoulli',var_distrib[i] == 'binomial'): 
-            max_nj = np.max(y.iloc[:,i], axis = 0)
+    nj_categ = []
+    
+    for j in range(len(y.columns)):
+        if np.logical_or(var_distrib[j] == 'bernoulli',var_distrib[j] == 'binomial'): 
+            max_nj = np.max(y.iloc[:,j], axis = 0)
             nj.append(max_nj)
             nj_bin.append(max_nj)
-        else:
-            card_nj = len(np.unique(y.iloc[:,i]))
+        elif var_distrib[j] == 'ordinal':
+            card_nj = len(np.unique(y.iloc[:,j]))
             nj.append(card_nj)
             nj_ord.append(card_nj)
-    
+        elif var_distrib[j] == 'continuous':
+            nj.append(np.inf)
+        elif var_distrib[j] == 'categorical':
+            card_nj = len(np.unique(y.iloc[:,j]))
+            nj.append(card_nj)
+            nj_categ.append(card_nj)
+        else:
+            raise ValueError('Unknown type:', var_distrib[j])
+                
     nj = np.array(nj)
     nj_bin = np.array(nj_bin)
     nj_ord = np.array(nj_ord)
+    nj_categ = np.array(nj_categ)
 
-    return nj, nj_bin, nj_ord
+    return nj, nj_bin, nj_ord, nj_categ
 
 
 def performance_testing(y, labels, k, init_method, var_distrib, nj, r_max = 5, seed = None):
@@ -286,78 +290,3 @@ def performance_testing(y, labels, k, init_method, var_distrib, nj, r_max = 5, s
                 results = results.append({'it_id': i + 1, 'r': r , 'run_time': np.nan, \
                             'nb_iterations': np.nan, 'micro': np.nan, 'macro': np.nan}, ignore_index=True)
     return results    
-
-#=============================================================================
-# Numeric stability
-#=============================================================================
-
-def log_1plusexp(eta_):
-    ''' Numerically stable version np.log(1 + np.exp(eta)) '''
-
-    eta_original = deepcopy(eta_)
-    eta_ = np.where(eta_ >= np.log(sys.float_info.max), np.log(sys.float_info.max) - 1, eta_) 
-    return np.where(eta_ >= 50, eta_original, np.log1p(np.exp(eta_)))
-        
-def expit(eta_):
-    ''' Numerically stable version of 1/(1 + exp(eta)) '''
-    
-    max_value_handled = np.log(np.sqrt(sys.float_info.max) - 1)
-    eta_ = np.where(eta_ <= - max_value_handled + 3, - max_value_handled + 3, eta_) 
-    eta_ = np.where(eta_ >= max_value_handled - 3, np.log(sys.float_info.max) - 3, eta_) 
-
-    return np.where(eta_ <= -50, np.exp(eta_), 1/(1 + np.exp(-eta_)))
-
-
-def make_symm(X):
-    ''' Ensures that a matric is symmetric by setting the over-diagonal 
-    coefficients as the transposed under-diagonal coefficients.
-    In our case, it keeps matrices robustly symmetric to rounding errors. 
-    X (2d-array): A matrix 
-    ----------------------------------------------------------------------
-    returns (2d-array): The "symmetrized" matrix
-    '''
-    return np.tril(X, k = -1) + np.tril(X).T
-
-def make_positive_definite(m, tol = None):
-    ''' Computes a matrix close to the original matrix m that is positive definite.
-    This function is just a transcript of R' make.positive.definite function.
-    m (2d array): A matrix that is not necessary psd.
-    tol (int): A tolerence level controlling how "different" the psd matrice
-                can be from the original matrix
-    ---------------------------------------------------------------
-    returns (2d array): A psd matrix
-    '''
-    d = m.shape[0]
-    if (m.shape[1] != d): 
-        raise RuntimeError("Input matrix is not square!")
-    eigvalues, eigvect = eigh(m)
-    
-    # Sort the eigen values
-    idx = eigvalues.argsort()[::-1]   
-    eigvalues = eigvalues[idx]
-    eigvect = eigvect[:,idx]
-            
-    if (tol == None): 
-        tol = d * np.max(np.abs(eigvalues)) * sys.float_info.epsilon
-    delta = 2 * tol
-    tau = np.maximum(0, delta - eigvalues)
-    dm = multi_dot([eigvect, np.diag(tau), eigvect.T])
-    return(m + dm)
-
-def ensure_psd(mtx_list):
-    ''' Checks the positive-definiteness (psd) of a list of matrix. 
-    If a matrix is not psd it is replaced by a "similar" positive-definite matrix.
-    mtx_list (list of 2d-array/3d-arrays): The list of matrices to check
-    ---------------------------------------------------------------------
-    returns (list of 2d-array/3d-arrays): A list of matrices that are all psd.
-    '''
-    
-    L = len(mtx_list)
-    for l in range(L):
-        for idx, X in enumerate(mtx_list[l]):
-            try:
-                cholesky(X)
-            except LinAlgError:
-                mtx_list[l][idx] = make_positive_definite(make_symm(X), tol = 10E-5)
-    return mtx_list
-                

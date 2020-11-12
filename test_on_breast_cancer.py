@@ -9,7 +9,7 @@ import os
 os.chdir('C:/Users/rfuchs/Documents/GitHub/GLLVM_layer')
 
 import warnings 
-warnings.filterwarnings("ignore") # Attention..!!!!!!!!!!!!!!!!!!!!!!!!!
+#warnings.filterwarnings("ignore") # Attention..!!!!!!!!!!!!!!!!!!!!!!!!!
 
 import autograd.numpy as np
 import matplotlib.pyplot as plt
@@ -17,7 +17,9 @@ import seaborn as sns
 import pandas as pd
 import prince
 
+from gower import gower_matrix
 from sklearn.metrics import precision_score
+from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import LabelEncoder 
 from sklearn.metrics import confusion_matrix
 from sklearn.mixture import GaussianMixture
@@ -27,7 +29,10 @@ from copy import deepcopy
 from glmlvm import glmlvm
 from init_params import init_params, dim_reduce_init
 from utils import misc, gen_categ_as_bin_dataset, \
-        ordinal_encoding, plot_gmm_init, compute_nj, cluster_purity
+        ordinal_encoding, plot_gmm_init, compute_nj
+        
+from autograd.numpy.linalg import LinAlgError
+
         
 warnings.filterwarnings("error") # Attention..!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -77,6 +82,9 @@ all_codes = [list(range(len(lab))) for lab in all_labels]
 for i, idx in enumerate(ord_idx):
     y.iloc[:,idx] = ordinal_encoding(y.iloc[:,idx], all_labels[i], all_codes[i])
 
+y_categ_non_enc = deepcopy(y)
+vd_categ_non_enc = deepcopy(var_distrib)
+
 # Encode categorical datas
 y, var_distrib = gen_categ_as_bin_dataset(y, var_distrib)
 
@@ -88,6 +96,19 @@ for colname in y.columns:
  
 nj, nj_bin, nj_ord = compute_nj(y, var_distrib)
 y_np = y.values
+
+p_new = y.shape[1]
+
+
+# Feature category (cf)
+cf_non_enc = np.logical_or(vd_categ_non_enc == 'categorical', vd_categ_non_enc == 'bernoulli')
+
+# Non encoded version of the dataset:
+y_nenc_typed = y_categ_non_enc.astype(np.object)
+y_np_nenc = y_nenc_typed.values
+
+# Defining distances over the non encoded features
+dm = gower_matrix(y_nenc_typed, cat_features = cf_non_enc) 
 
 #===========================================#
 # Running the algorithm
@@ -114,7 +135,7 @@ print(m)
 print(confusion_matrix(labels_oh, pred))
 
 # Random init
-random_init = init_params(r, nj_bin, nj_ord, k, None)
+random_init = init_params(r, nj_bin, nj_ord, 0,  k, None)
 out = glmlvm(y_np, r, k, random_init, var_distrib, nj, M, it, eps, maxstep, seed)
 m, pred = misc(labels_oh, out['classes'], True) 
 print(m)
@@ -137,36 +158,58 @@ it = 30
 maxstep = 100
 
 nb_trials= 30
-glmlvm_res = pd.DataFrame(columns = ['it_id', 'r', 'micro', 'macro', 'purity'])
+glmlvm_res = pd.DataFrame(columns = ['it_id', 'r', 'init' , 'micro', \
+                                     'macro', 'silhouette'])
+inits = ['random', 'MCA']
 
-
-for r in range(1, 6):
+for r in range(2, 6):
     print(r)
     M = r * 4
-    for i in range(nb_trials):
-        # Prince init
-        #prince_init = dim_reduce_init(y, k, r, nj, var_distrib, dim_red_method = 'prince', seed = None)
-        random_init = init_params(r, nj_bin, nj_ord, k, None)
-
-        try:
-            out = glmlvm(y_np, r, k, random_init, var_distrib, nj, M, it, eps, maxstep, seed = None)
-            m, pred = misc(labels_oh, out['classes'], True) 
-            cm = confusion_matrix(labels_oh, pred)
-            purity = cluster_purity(cm)
-                
-            micro = precision_score(labels_oh, pred, average = 'micro')
-            macro = precision_score(labels_oh, pred, average = 'macro')
-            #print(micro)
-            #print(macro)
+    for init_alg in inits:
+        for i in range(nb_trials):
+            if init_alg == 'random':
+                init = init_params(r, nj_bin, nj_ord, 0, k, None)
+            else:
+                init = dim_reduce_init(y, k, r, nj, var_distrib,\
+                                       dim_red_method = 'prince', seed = None)
         
-            glmlvm_res = glmlvm_res.append({'it_id': i + 1, 'r': str(r), 'micro': micro, 'macro': macro, \
-                                            'purity': purity}, ignore_index=True)
-        except:
-            glmlvm_res = glmlvm_res.append({'it_id': i + 1, 'r': str(r), 'micro': np.nan, 'macro': np.nan, \
-                                            'purity': np.nan}, ignore_index=True)
-       
-glmlvm_res.groupby('r').mean()
-glmlvm_res.groupby('r').std()
+            try:
+                out = glmlvm(y_np, r, k, init, var_distrib, nj, M, it, eps, maxstep, seed = None)
+                m, pred = misc(labels_oh, out['classes'], True) 
+                
+                try:
+                    sil = silhouette_score(dm, pred, metric = 'precomputed') 
+                except:
+                    sil = np.nan
+                    
+                micro = precision_score(labels_oh, pred, average = 'micro')
+                macro = precision_score(labels_oh, pred, average = 'macro')
 
-#glmlvm_res.to_csv(res_folder + '/glmlvm_res.csv')
-glmlvm_res.to_csv(res_folder + '/glmlvm_res_random.csv')
+                glmlvm_res = glmlvm_res.append({'it_id': i + 1, 'r': str(r),
+                                                'init': init_alg, \
+                                                'micro': micro, 'macro': macro, \
+                                                'silhouette': sil}, ignore_index=True)
+            except (ValueError, LinAlgError):
+                glmlvm_res = glmlvm_res.append({'it_id': i + 1, 'r': str(r),\
+                                                'init': init_alg, \
+                                                'micro': np.nan, 'macro': np.nan, \
+                                                'silhouette': np.nan}, ignore_index=True)
+           
+glmlvm_res.groupby(['r', 'init']).mean()
+glmlvm_res.groupby(['r', 'init']).std()
+
+glmlvm_res_mca = pd.read_csv(res_folder + '/glmlvm_res_mca.csv')
+glmlvm_res_mca.groupby(['r']).mean().max()
+glmlvm_res_mca.groupby(['r']).std()
+
+glmlvm_res_random = pd.read_csv(res_folder + '/glmlvm_res_random.csv')
+glmlvm_res_random.groupby(['r']).mean().max()
+glmlvm_res_random.groupby(['r']).std()
+
+# Store each init in a different file
+glmlvm_res_mca = glmlvm_res[glmlvm_res['init'] == 'MCA']
+glmlvm_res_random = glmlvm_res[glmlvm_res['init'] == 'random']
+
+glmlvm_res_mca.to_csv(res_folder + '/glmlvm_res_mca.csv')
+glmlvm_res_random.to_csv(res_folder + '/glmlvm_res_random.csv')
+

@@ -7,9 +7,11 @@ Created on Tue Feb 11 19:33:27 2020
 
 import autograd.numpy as np
 from autograd.numpy import newaxis as n_axis
+from autograd.numpy import transpose as t
+
 from scipy.special import binom
 from sklearn.preprocessing import OneHotEncoder
-from utils import log_1plusexp, expit
+from numeric_stability import log_1plusexp, expit
 
 def log_py_zM_bin_j(lambda_bin_j, y_bin_j, zM, k, nj_bin_j): 
     ''' Compute log p(y_j | zM, s1 = k1) of the jth
@@ -133,7 +135,7 @@ def log_py_zM_ord(lambda_ord, y_ord, zM, k, nj_ord):
     log_pyzM = 0
     for j in range(nb_ord):
         y_oh_j = enc.fit_transform(y_ord[:,j][..., n_axis]).toarray()
-        log_pyzM += log_py_zM_ord_j(lambda_ord[j], y_oh_j, zM, k, nj_ord[j])
+        log_pyzM += log_py_zM_ord_j(lambda_ord[j], y_oh_j, zM, k, int(nj_ord[j]))
         
     return log_pyzM
         
@@ -153,3 +155,60 @@ def ord_loglik_j(lambda_ord_j, y_oh_j, zM, k, ps_y, p_z_ys, nj_ord_j):
     log_pyzM_j = log_py_zM_ord_j(lambda_ord_j, y_oh_j, zM, k, nj_ord_j)
     return -np.sum(ps_y * np.sum(np.expand_dims(p_z_ys, axis = 3) * log_pyzM_j, (0,3)))
 
+######################################################################
+# Continuous likelihood functions
+######################################################################
+
+def log_py_zM_cont(lambda_cont, y_cont, zM, k):
+    ''' Compute sum_j log p(y_j | zM, s1 = k1) of all the continuous data with a for loop
+    
+    lambda_cont (nb_cont x (r + 1) ndarray): Coefficients of the continuous distributions in the GLLVM layer
+    y_cont (numobs x nb_cont ndarray): The subset containing only the continuous variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    --------------------------------------------------------------
+    returns (ndarray): sum_j p(y_j | zM, s1 = k1)
+    '''
+    log_pyzM = 0
+    nb_cont = y_cont.shape[1]
+    
+    for j in range(nb_cont):
+        log_pyzM += log_py_zM_cont_j(lambda_cont[j], y_cont[:,j], zM, k)
+        
+    return log_pyzM
+
+def log_py_zM_cont_j(lambda_cont_j, y_cont_j, zM, k):
+    ''' Compute log p(y_j | zM, s1 = k1) of the jth continuous variable
+    
+    lambda_cont_j ( (r + 1) 1darray): Coefficients of the continuous distributions in the GLLVM layer
+    y_cont_j (numobs 1darray): The subset containing only the continuous variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    --------------------------------------------------------------
+    returns (ndarray): p(y_j | zM, s1 = k1)
+    '''
+    r = zM.shape[1]
+    M = zM.shape[0]
+
+    yg = np.repeat(y_cont_j[np.newaxis], axis = 0, repeats = M)
+    yg = np.expand_dims(yg, 1)
+    
+    eta = np.transpose(zM, (0, 2, 1)) @ lambda_cont_j[1:].reshape(1, r, 1)
+    eta = eta + lambda_cont_j[0].reshape(1, 1, 1) # Add the constant
+    
+    return t(- 0.5 * (np.log(2 * np.pi) + (yg - eta) ** 2), (0, 2, 1))
+
+def cont_loglik_j(lambda_cont_j, y_cont_j, zM, k, ps_y, p_z_ys):
+    ''' Compute the expected log-likelihood for each continuous variable y_j
+    
+    lambda_cont_j ( (r + 1) 1darray): Coefficients of the continuous distributions in the GLLVM layer
+    y_cont_j (numobs 1darray): The subset containing only the continuous variables in the dataset
+    zM (M x r x k ndarray): M Monte Carlo copies of z for each component k1 of the mixture
+    k (int): The number of components of the mixture
+    ps_y (numobs x k ndarray): p(s_i = k1 | y_i) for all k1 in [1,k] and i in [1,numobs]
+    p_z_ys (M x numobs x k ndarray): p(z_i | y_i, s_i = k) for all m in [1,M], k1 in [1,k] and i in [1,numobs]
+    --------------------------------------------------------------
+    returns (float): E_{zM, s | y, theta}(y_bin_j | zM, s1 = k1)
+    ''' 
+    log_pyzM_j = log_py_zM_cont_j(lambda_cont_j, y_cont_j, zM, k)
+    return -np.sum(ps_y * np.sum(p_z_ys * log_pyzM_j, axis = 0))
