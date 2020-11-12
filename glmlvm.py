@@ -49,6 +49,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     returns (dict): The predicted classes and the likelihood through the EM steps
     '''
 
+    epsilon = 1E-16
     prev_lik = - 1E16
     tol = 0.01
     
@@ -136,12 +137,19 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
             pz_s[:,:, i] = mvnorm.pdf(zM[:,:,i], mean = mu[i].flatten(), cov = sigma[i])[..., n_axis]
                 
         # Compute (17) p(y | s_i = 1)
-        pz_s_norm = pz_s / np.sum(pz_s, axis = 0, keepdims = True) 
+        norm_cste = np.sum(pz_s, axis = 0, keepdims = True)
+        norm_cste = np.where(norm_cste == 0.0, epsilon, norm_cste)
+        pz_s_norm = pz_s / norm_cste
         py_s = (pz_s_norm * py_zM).sum(axis = 0)
         
         # Compute (16) p(z |y, s) 
-        p_z_ys = pz_s * py_zM / py_s[n_axis]
-        p_z_ys = p_z_ys / np.sum(p_z_ys, axis = 0, keepdims = True) # Normalizing p(z|y,s)
+        norm_cste = py_s[n_axis]
+        norm_cste = np.where(norm_cste == 0.0, epsilon, norm_cste)      
+        p_z_ys = pz_s * py_zM / norm_cste
+        
+        norm_cste = np.sum(p_z_ys, axis = 0, keepdims = True)
+        norm_cste = np.where(norm_cste == 0.0, epsilon, norm_cste)           
+        p_z_ys = p_z_ys / norm_cste # Normalizing p(z|y,s)
         
         # Free some memory
         del(py_zM)
@@ -151,7 +159,10 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         
         # Compute unormalized (18)
         ps_y = w[n_axis] * py_s
-        ps_y = ps_y / np.sum(ps_y, axis = 1, keepdims = True)        
+    
+        norm_cste = np.sum(ps_y, axis = 1, keepdims = True)   
+        norm_cste = np.where(norm_cste == 0.0, epsilon, norm_cste)           
+        ps_y = ps_y / norm_cste  
         p_y = py_s @ w
         
         # Compute E_{y,s}(z) and E_{y,s}(zTz)
@@ -171,7 +182,7 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
 
         w = np.mean(ps_y, axis = 0)
         den = ps_y.sum(0, keepdims = True).T[..., n_axis]
-        den = np.where(den < 1E-14, 1E-14, den)
+        den = np.where(den == 0.0, epsilon, den)
         
         mu = (ps_y[...,n_axis] * E_z_sy).sum(0)[..., np.newaxis] / den
 

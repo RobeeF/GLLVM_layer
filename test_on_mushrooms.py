@@ -8,27 +8,21 @@ Created on Fri Apr  3 11:33:34 2020
 import os 
 os.chdir('C:/Users/rfuchs/Documents/GitHub/GLLVM_layer')
 
-import prince
 import pandas as pd
-import seaborn as sns
 import autograd.numpy as np
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import OneHotEncoder
 
 from gower import gower_matrix
 from sklearn.metrics import precision_score
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import LabelEncoder 
 from sklearn.metrics import confusion_matrix
-from sklearn.mixture import GaussianMixture
 
 from copy import deepcopy
 
 from glmlvm import glmlvm
 from init_params import init_params, dim_reduce_init
 from utils import misc, gen_categ_as_bin_dataset, \
-        ordinal_encoding, plot_gmm_init, compute_nj, \
-            performance_testing
+        ordinal_encoding, compute_nj
 
 from autograd.numpy.linalg import LinAlgError
 
@@ -37,16 +31,16 @@ from autograd.numpy.linalg import LinAlgError
 ##############        Clustering on the Mushrooms dataset (UCI)          ######################
 ###############################################################################################
 
-#===========================================#
-# Importing and droping NaNs
-#===========================================#
-os.chdir('C:/Users/rfuchs/Documents/These/Stats/mixed_dgmm/datasets')
 
 # Importing and selecting data
 mush = pd.read_csv('mushrooms/agaricus-lepiota.csv', sep = ',', header = None)
 mush = mush.infer_objects()
 
 y = mush.iloc[:,1:]
+
+# Keep only the variables that have at least 2 modalities
+one_modality_vars = np.array([len(set(y[col])) == 1 for col in y.columns])
+y = y.iloc[:, ~one_modality_vars]
 
 le = LabelEncoder()
 labels = mush.iloc[:,0]
@@ -65,10 +59,10 @@ k = len(np.unique(labels_oh))
 #===========================================#
 
 var_distrib = np.array(['categorical', 'categorical', 'categorical', 'bernoulli', 'categorical',\
-                        'categorical', 'categorical', 'bernoulli', 'categorical', 'categorical',\
+                        'bernoulli', 'bernoulli', 'bernoulli', 'categorical', 'bernoulli',\
                         'categorical', 'categorical', 'categorical', 'categorical', 'categorical', \
-                        'categorical', 'categorical', 'ordinal', 'categorical', 'categorical', \
-                        'categorical', 'categorical'])
+                        'bernoulli', 'ordinal', 'categorical', 'categorical', \
+                        'ordinal', 'categorical'])
 
 ord_idx = np.where(var_distrib == 'ordinal')[0]
 
@@ -107,6 +101,11 @@ y_np_nenc = y_nenc_typed.values
 
 # Defining distances over the non encoded features
 dm = gower_matrix(y_nenc_typed, cat_features = cf_non_enc) 
+
+dtype = {y.columns[j]: np.float64 if (var_distrib[j] != 'bernoulli') and \
+        (var_distrib[j] != 'categorical') else np.str for j in range(p_new)}
+
+y = y.astype(dtype, copy=True)
 
 #===========================================#
 # Running the algorithm
