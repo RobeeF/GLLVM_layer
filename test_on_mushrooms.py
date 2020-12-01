@@ -215,3 +215,5 @@ glmlvm_res_random.groupby(['r']).std()
 glmlvm_res_mca.to_csv(res_folder + '/glmlvm_res_mca.csv')
 glmlvm_res_random.to_csv(res_folder + '/glmlvm_res_random.csv')
 
+
+glmlvm_res = pd.read_csv(res_folder + '/glmlvm_res_best_sil.csv')

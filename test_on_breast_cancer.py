@@ -22,14 +22,13 @@ from sklearn.metrics import precision_score
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import LabelEncoder 
 from sklearn.metrics import confusion_matrix
-from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import OneHotEncoder
 
 from copy import deepcopy
 from glmlvm import glmlvm
 from init_params import init_params, dim_reduce_init
 from utils import misc, gen_categ_as_bin_dataset, \
-        ordinal_encoding, plot_gmm_init, compute_nj
+        ordinal_encoding, compute_nj
         
 from autograd.numpy.linalg import LinAlgError
 
@@ -68,7 +67,7 @@ labels_oh = enc.fit_transform(np.array(labels).reshape(-1,1)).flatten()
 # Formating the data
 #===========================================#
 var_distrib = np.array(['ordinal', 'ordinal', 'ordinal', 'ordinal', \
-                        'bernoulli', 'ordinal', 'categorical',
+                        'bernoulli', 'ordinal', 'bernoulli',
                         'categorical', 'bernoulli'])
     
 ord_idx = np.where(var_distrib == 'ordinal')[0]
