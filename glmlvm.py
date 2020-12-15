@@ -36,14 +36,14 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
     y (numobs x p ndarray): The observations containing discrete variables
     r (int): The dimension of latent variables
     k (int): The number of components of the latent Gaussian mixture
-    it (int): The maximum number of EM iterations of the algorithm
-    eps (float): If the likelihood increase by less than eps then the algorithm stops
-    maxstep (int): The maximum number of optimisation step for each variable
+    init (dict): The initial values of the parameters
     var_distrib (p 1darray): An array containing the types of the variables in y 
     nj (p 1darray): For binary/count data: The maximum values that the variable can take. 
                     For ordinal data: the number of different existing categories for each variable
-                    For continuous variable: 1
     M (int): The number of MC points to compute 
+    it (int): The maximum number of EM iterations of the algorithm
+    eps (float): If the likelihood increase by less than eps then the algorithm stops
+    maxstep (int): The maximum number of optimisation step for each variable
     seed (int): The random state seed to set (Only for numpy generated data for the moment)
     ------------------------------------------------------------------------------------------------
     returns (dict): The predicted classes and the likelihood through the EM steps
@@ -171,8 +171,8 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
                    t(new_zM[...,n_axis], (0, 1, 3, 4, 2)))
         E_zz_sy = np.mean(zTz, axis = 0)
         
-        # Compute E_y(z) and E_y(zTz)
-        #Ez_y = (ps_y[...,n_axis] * E_z_sy).sum(1)
+        # Compute E_y(z) might be useful for ploting purposes
+        Ez_y = (ps_y[...,n_axis] * E_z_sy).sum(1)
                 
         del(new_zM)
         
@@ -297,7 +297,6 @@ def glmlvm(y, r, k, init, var_distrib, nj, M, it = 50, eps = 1E-05, maxstep = 10
         
         if (hh < 3): 
             ratio = 2 * eps
-        #print(hh)
         print(likelihood)
         
         # Refresh the classes only if they provide a better explanation of the data

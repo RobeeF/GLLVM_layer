@@ -16,14 +16,24 @@ from autograd.numpy.linalg import cholesky, LinAlgError
 #=============================================================================
 
 def log_1plusexp(eta_):
-    ''' Numerically stable version np.log(1 + np.exp(eta)) '''
-
+    ''' Numerically stable version np.log(1 + np.exp(eta)) 
+    eta_ (nd-array): An ndarray that potentially contains high values that 
+        will overflow while taking the exponential
+    -----------------------------------------------------------------------
+    returns (nd-array): log(1 + exp(eta_))
+    '''
+    
     eta_original = deepcopy(eta_)
     eta_ = np.where(eta_ >= np.log(sys.float_info.max), np.log(sys.float_info.max) - 1, eta_) 
     return np.where(eta_ >= 50, eta_original, np.log1p(np.exp(eta_)))
         
 def expit(eta_):
-    ''' Numerically stable version of 1/(1 + exp(eta)) '''
+    ''' Numerically stable version of 1/(1 + exp(eta_)) 
+    eta_ (nd-array): An ndarray that potentially contains high absolute values 
+    that will overflow while taking the exponential.
+    -----------------------------------------------------------------------
+    returns (nd-array): 1/(1 + exp(eta_))   
+    '''
     
     max_value_handled = np.log(np.sqrt(sys.float_info.max) - 1)
     eta_ = np.where(eta_ <= - max_value_handled + 3, - max_value_handled + 3, eta_) 
@@ -40,6 +50,7 @@ def make_symm(X):
     ----------------------------------------------------------------------
     returns (2d-array): The "symmetrized" matrix
     '''
+    
     return np.tril(X, k = -1) + np.tril(X).T
 
 def make_positive_definite(m, tol = None):

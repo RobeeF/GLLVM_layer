@@ -149,7 +149,7 @@ for r in range(2, 6):
     for init_alg in inits:
         for i in range(nb_trials):
             if init_alg == 'random':
-                init = init_params(r, nj_bin, nj_ord, 0, k, None)
+                init = init_params(r, nj_bin, nj_ord, k, None)
             else:
                 init = dim_reduce_init(y, k, r, nj, var_distrib,\
                                        dim_red_method = 'prince', seed = None)

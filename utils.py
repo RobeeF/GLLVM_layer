@@ -12,8 +12,6 @@ from copy import deepcopy
 from itertools import permutations
 from sklearn.metrics import precision_score
 from sklearn.preprocessing import OneHotEncoder
-#from init_params import init_params, dim_reduce_init
-
 
 import itertools
 import pandas as pd
@@ -102,7 +100,11 @@ def misc(true, pred, return_relabeled = False):
         return best_misc
         
 def cluster_purity(cm):
-    ''' Compute the cluster purity index mentioned in Chen and He (2016)'''
+    ''' Compute the cluster purity index mentioned in Chen and He (2016)
+    cm (2d-array): The confusion matrix resulting from the prediction
+    --------------------------------------------------------------------
+    returns (float): The cluster purity
+    '''
     return np.sum(np.amax(cm, axis=0)) / np.sum(cm) 
 
 def gen_categ_as_bin_dataset(y, var_distrib):
